@@ -34,7 +34,7 @@ private struct OnboardingPage: View {
             Spacer()
             Image(systemName: systemImage)
                 .font(.system(size: 72))
-                .foregroundStyle(.accent)
+                .foregroundStyle(Color.accentColor)
             Text(title)
                 .font(.title.bold())
             Text(text)
@@ -51,3 +51,4 @@ private struct OnboardingPage: View {
 #Preview {
     NavigationStack { OnboardingView() }
 }
+

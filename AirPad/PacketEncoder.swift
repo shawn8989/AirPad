@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct PacketEncoder {
+struct LegacyPacketEncoder {
     func encodePacket(type: String, payload: [String: Any], deviceID: String, sharedSecret: Data) throws -> [String: Any] {
         // Create canonical JSON of payload for HMAC calculation
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -25,3 +25,4 @@ struct PacketEncoder {
         return packet
     }
 }
+

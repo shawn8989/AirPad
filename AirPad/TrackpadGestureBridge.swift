@@ -45,7 +45,7 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
     private lazy var threePan: UIPanGestureRecognizer = {
         let g = UIPanGestureRecognizer(target: self, action: #selector(handleThreePan(_:)))
         g.minimumNumberOfTouches = 3
-        g.maximumNumberOfTouches = 0 // allow 3+
+        g.maximumNumberOfTouches = 3
         g.delegate = self
         return g
     }()
@@ -137,15 +137,19 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
 
     @objc private func handleThreePan(_ g: UIPanGestureRecognizer) {
         switch g.state {
+        case .began:
+            break
         case .ended:
             let t = g.translation(in: self)
-            let threshold: CGFloat = 60
+            let threshold: CGFloat = 40
             if abs(t.x) > abs(t.y) {
                 if abs(t.x) >= threshold {
                     if t.x > 0 {
                         NetworkManager.shared.sendAction("three_swipe_right")
+                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
                     } else {
                         NetworkManager.shared.sendAction("three_swipe_left")
+                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
                     }
                     if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 }
@@ -153,8 +157,10 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
                 if abs(t.y) >= threshold {
                     if t.y > 0 {
                         NetworkManager.shared.sendAction("three_swipe_down")
+                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "down")
                     } else {
                         NetworkManager.shared.sendAction("three_swipe_up")
+                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "up")
                     }
                     if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 }
@@ -192,3 +198,4 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         return true
     }
 }
+

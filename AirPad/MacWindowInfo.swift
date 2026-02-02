@@ -12,6 +12,7 @@ public struct MacWindowInfo: Identifiable, Hashable {
     public var space: Int?
     public var ownerPID: Int?
     public var appIcon: UIImage?
+    public var thumbnail: UIImage?
 
     public init(id: String,
                 title: String,
@@ -21,7 +22,8 @@ public struct MacWindowInfo: Identifiable, Hashable {
                 isOnScreen: Bool = true,
                 space: Int? = nil,
                 ownerPID: Int? = nil,
-                appIcon: UIImage? = nil) {
+                appIcon: UIImage? = nil,
+                thumbnail: UIImage? = nil) {
         self.id = id
         self.title = title
         self.appBundleIdentifier = appBundleIdentifier
@@ -31,5 +33,6 @@ public struct MacWindowInfo: Identifiable, Hashable {
         self.space = space
         self.ownerPID = ownerPID
         self.appIcon = appIcon
+        self.thumbnail = thumbnail
     }
 }

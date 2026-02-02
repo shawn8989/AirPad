@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Core bundle metadata -->
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundleDisplayName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+
+    <!-- iOS specific -->
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+
+    <!-- Launch screen: keep empty dict if using asset-based/default launch screen -->
+    <key>UILaunchScreen</key>
+    <dict/>
+
+    <!-- Local Network Privacy (required for Bonjour on iOS 14+) -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>AirPad discovers and connects to your Mac on the local network to send trackpad and keyboard input.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_airbridge._tcp</string>
+    </array>
+
+    <!-- Optional: improves indirect input behavior with trackpads/keyboards -->
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+</dict>
+</plist>
