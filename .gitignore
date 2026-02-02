@@ -1,0 +1,78 @@
+.DS_Store
+build/
+DerivedData/
+*.xcuserdatad/
+xcuserdata/
+*.xcworkspace
+*.xcodeproj/project.xcworkspace/
+xcshareddata/
+*.xcuserstate
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+Pods/
+Carthage/Build/
+*.xcscmblueprint
+*.moved-aside
+*.swp
+fastlane/report.xml
+fastlane/Preview.html
+# CocoaPods
+Pods/
+# SPM
+.build/
+# Xcode Archives
+*.xcarchive
+# Provisioning profiles
+*.mobileprovision
+# Secrets
+.env
+.env.*
+# User-specific
+*.iml
+.idea/
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Icon must end with two \
+Icon\r
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+
+# Xcode 8+ User interface state
+xcuserdata/
+
+# Swift Package Manager
+/.build
+/.swiftpm
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# JetBrains
+.idea/
+
+# Configs
+*.gcode
+
+# Derived files
+*.hmap
+
+# Others
+*.keystore
+
+# Ignore Info.plist if you keep environment-specific versions
+# AirPad/Info.plist
