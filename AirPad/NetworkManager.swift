@@ -543,6 +543,13 @@ final class NetworkManager: ObservableObject {
                     self.log("auth_challenge: no shared secret available to answer challenge")
                 }
 
+            case "auth_reset":
+                // Server could not verify our secret (typically a stale pairing).
+                // Clear it so the automatic reconnect performs a fresh pairing.
+                self.log("Server requested re-pair; clearing local shared secret")
+                try? self.security.deleteSharedSecret()
+                DispatchQueue.main.async { self.isPairing = true }
+
             case "installed_apps":
                 if let payload = obj?["payload"] as? [String: Any],
                    let items = payload["apps"] as? [[String: Any]] {
