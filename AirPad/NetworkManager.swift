@@ -528,7 +528,21 @@ final class NetworkManager: ObservableObject {
                     }
                     try? self.send(type: "hello", payload: ["deviceID": deviceID, "session_salt": salt.base64EncodedString()])
                 }
-            
+
+            case "auth_challenge":
+                // The server sent a random nonce; prove we hold the shared secret
+                // by returning HMAC(secret, nonce). Until this passes, the server
+                // will not execute any of our commands.
+                if let payload = obj?["payload"] as? [String: Any],
+                   let nonceB64 = payload["nonce"] as? String,
+                   let nonce = Data(base64Encoded: nonceB64),
+                   let secret = (try? self.security.getSharedSecret()) ?? nil {
+                    let proof = self.security.hmacSHA256(data: nonce, key: secret)
+                    try? self.send(type: "auth_proof", payload: ["proof": proof.base64EncodedString()])
+                } else {
+                    self.log("auth_challenge: no shared secret available to answer challenge")
+                }
+
             case "installed_apps":
                 if let payload = obj?["payload"] as? [String: Any],
                    let items = payload["apps"] as? [[String: Any]] {
