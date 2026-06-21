@@ -251,12 +251,11 @@ final class NetworkManager: ObservableObject {
             // itself authenticates both peers. The legacy cert-pinning helpers
             // (certificateFingerprintSHA256 / server-cert-fingerprint storage)
             // are retained but unused until/unless we add certificate TLS.
-            // Offer this device's ID as the PSK identity so the Mac can select
-            // our per-device key. Until pairing (Stage 2b) stores a real per-Mac
-            // key, fall back to the Stage 1 shared key.
-            let myDeviceID = (try? SecurityManager.shared.getOrCreateDeviceID()) ?? AirSecureChannel.stage1Identity
+            // Shared-key TLS-PSK transport (known-working). Per-device identity
+            // and authentication are handled at the application layer after
+            // connect (Stage 2b), not via the TLS PSK identity.
             parameters = AirSecureChannel.makePSKParameters(psk: AirSecureChannel.stage1PSK,
-                                                            identity: myDeviceID)
+                                                            identity: AirSecureChannel.stage1Identity)
         } else {
             parameters = NWParameters.tcp
         }
