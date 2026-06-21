@@ -77,7 +77,11 @@ final class NetworkManager: ObservableObject {
     private let security = SecurityManager.shared
 
     // Security feature flags
-    var enableTLS: Bool = true
+    // NOTE: Temporarily disabled so the client speaks plain TCP, matching the
+    // current AirBridge server (which listens on plain TCP). This is the known-
+    // working configuration for end-to-end connectivity. Re-enable once the
+    // server is updated to terminate TLS. Traffic is unencrypted while false.
+    var enableTLS: Bool = false
     var enableMessageHMAC: Bool = false // set true when server supports message auth
     private var messageCounter: UInt64 = 0
     private var sessionKey: Data?
