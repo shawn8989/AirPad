@@ -77,11 +77,10 @@ final class NetworkManager: ObservableObject {
     private let security = SecurityManager.shared
 
     // Security feature flags
-    // NOTE: Temporarily disabled so the client speaks plain TCP, matching the
-    // current AirBridge server (which listens on plain TCP). This is the known-
-    // working configuration for end-to-end connectivity. Re-enable once the
-    // server is updated to terminate TLS. Traffic is unencrypted while false.
-    var enableTLS: Bool = false
+    // Stage 1: client uses TLS-PSK (see AirSecureChannel.makePSKParameters) to
+    // match the AirBridge server's PSK listener — encrypted and mutually
+    // authenticated via a shared key. Set false only for plain-TCP debugging.
+    var enableTLS: Bool = true
     var enableMessageHMAC: Bool = false // set true when server supports message auth
     private var messageCounter: UInt64 = 0
     private var sessionKey: Data?
@@ -247,44 +246,13 @@ final class NetworkManager: ObservableObject {
 
         let parameters: NWParameters
         if enableTLS {
-            let tls = NWProtocolTLS.Options()
-            sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { [weak self] (metadata, trust, complete) in
-                guard let self = self else { complete(false); return }
-                let trustRef: SecTrust = sec_trust_copy_ref(trust).takeRetainedValue()
-                // Evaluate trust using system defaults first
-                SecTrustEvaluateAsyncWithError(trustRef, self.queue) { _, ok, _ in
-                    var accept = ok
-                    if let fp = self.certificateFingerprintSHA256(from: trustRef) {
-                        do {
-                            if let fpStored = try SecurityManager.shared.getServerCertFingerprint() {
-                                if fpStored == fp {
-                                    self.log("TLS verify: fingerprint match (system trust=\(ok)).")
-                                    // Keep accept as the result of system trust per current policy
-                                } else {
-                                    self.log("TLS verify: fingerprint mismatch; rejecting. stored=\(fpStored.base64EncodedString()) current=\(fp.base64EncodedString())")
-                                    accept = false
-                                }
-                            } else {
-                                if !ok {
-                                    self.log("TLS verify: system trust failed and no stored fingerprint; trusting on first use (TOFU) and storing current fingerprint.")
-                                } else {
-                                    self.log("TLS verify: no stored fingerprint; storing current fingerprint and accepting.")
-                                }
-                                try? SecurityManager.shared.storeServerCertFingerprint(fp)
-                                accept = true
-                            }
-                        } catch {
-                            self.log("TLS verify: error retrieving stored fingerprint: \(error.localizedDescription). Using TOFU and storing current fingerprint.")
-                            try? SecurityManager.shared.storeServerCertFingerprint(fp)
-                            accept = true
-                        }
-                    } else {
-                        self.log("TLS verify: could not compute certificate fingerprint; deferring to system trust = \(ok).")
-                    }
-                    complete(accept)
-                }
-            }, self.queue)
-            parameters = NWParameters(tls: tls)
+            // TLS-PSK (Stage 1): mutually-authenticated, encrypted channel via a
+            // shared key. No certificate / TOFU verify-block needed — the PSK
+            // itself authenticates both peers. The legacy cert-pinning helpers
+            // (certificateFingerprintSHA256 / server-cert-fingerprint storage)
+            // are retained but unused until/unless we add certificate TLS.
+            parameters = AirSecureChannel.makePSKParameters(psk: AirSecureChannel.stage1PSK,
+                                                            identity: AirSecureChannel.stage1Identity)
         } else {
             parameters = NWParameters.tcp
         }
