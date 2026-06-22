@@ -11,6 +11,7 @@ struct TrackpadView: View {
     @AppStorage("pointerSensitivity") private var pointerSensitivity: Double = 1.0
     @AppStorage("naturalScroll") private var naturalScroll: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
+    @AppStorage("showTouches") private var showTouches: Bool = true
 
     var body: some View {
         GeometryReader { geo in
@@ -26,7 +27,8 @@ struct TrackpadView: View {
             .overlay(
                 TrackpadGestureBridge(pointerSensitivity: pointerSensitivity,
                                        naturalScroll: naturalScroll,
-                                       hapticsEnabled: hapticsEnabled)
+                                       hapticsEnabled: hapticsEnabled,
+                                       showTouches: showTouches)
                     .allowsHitTesting(true)
             )
         }

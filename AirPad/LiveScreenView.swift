@@ -439,13 +439,15 @@ private struct TrackpadGestureBridgeOverlay: View {
     @AppStorage("pointerSensitivity") private var pointerSensitivity: Double = 1.0
     @AppStorage("naturalScroll") private var naturalScroll: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
+    @AppStorage("showTouches") private var showTouches: Bool = true
 
     var isActive: Bool
 
     var body: some View {
         TrackpadGestureBridge(pointerSensitivity: pointerSensitivity,
                                naturalScroll: naturalScroll,
-                               hapticsEnabled: hapticsEnabled)
+                               hapticsEnabled: hapticsEnabled,
+                               showTouches: showTouches)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .allowsHitTesting(isActive)

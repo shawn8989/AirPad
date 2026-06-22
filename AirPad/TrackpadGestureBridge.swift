@@ -5,15 +5,16 @@ struct TrackpadGestureBridge: UIViewRepresentable {
     var pointerSensitivity: Double
     var naturalScroll: Bool
     var hapticsEnabled: Bool
+    var showTouches: Bool
 
     func makeUIView(context: Context) -> GestureHostView {
         let v = GestureHostView()
-        v.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled)
+        v.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches)
         return v
     }
 
     func updateUIView(_ uiView: GestureHostView, context: Context) {
-        uiView.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled)
+        uiView.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches)
     }
 }
 
@@ -26,6 +27,11 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
     private var pinchAccum: CGFloat = 1.0
     private var lastPanTranslation: CGPoint = .zero
     private var lastTwoPanTranslation: CGPoint = .zero
+
+    // Live finger-tracking for the on-screen touch indicator. Keyed by the
+    // UITouch instance so each finger gets a stable dot for its lifetime.
+    private var showTouches: Bool = true
+    private var touchPoints: [ObjectIdentifier: CGPoint] = [:]
 
     private lazy var onePan: UIPanGestureRecognizer = {
         let g = UIPanGestureRecognizer(target: self, action: #selector(handleOnePan(_:)))
@@ -89,11 +95,13 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         return g
     }()
 
-    func configure(pointerSensitivity: Double, naturalScroll: Bool, hapticsEnabled: Bool) {
+    func configure(pointerSensitivity: Double, naturalScroll: Bool, hapticsEnabled: Bool, showTouches: Bool) {
         self.pointerSensitivity = CGFloat(pointerSensitivity)
         self.naturalScroll = naturalScroll
         self.hapticsEnabled = hapticsEnabled
+        self.showTouches = showTouches
         isMultipleTouchEnabled = true
+        isOpaque = false
         backgroundColor = .clear
         if gestureRecognizers == nil || gestureRecognizers?.isEmpty == true {
             addGestureRecognizer(onePan)
@@ -105,7 +113,74 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
             addGestureRecognizer(oneDoubleTap)
             addGestureRecognizer(twoTap)
             oneTap.require(toFail: oneDoubleTap)
+            // Keep touches flowing to this view's touchesBegan/Moved so the
+            // finger indicator stays live even after a recognizer engages.
+            for g in [onePan, twoPan, threePan, fourPan, oneTap, oneDoubleTap, twoTap] as [UIGestureRecognizer] {
+                g.cancelsTouchesInView = false
+            }
+            pinch.cancelsTouchesInView = false
         }
+        if !showTouches && !touchPoints.isEmpty {
+            touchPoints.removeAll()
+            setNeedsDisplay()
+        }
+    }
+
+    // MARK: - Raw touch tracking (drives the on-screen finger indicator)
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        updateTouchPoints(touches)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        updateTouchPoints(touches)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        for t in touches { touchPoints.removeValue(forKey: ObjectIdentifier(t)) }
+        if showTouches { setNeedsDisplay() }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        for t in touches { touchPoints.removeValue(forKey: ObjectIdentifier(t)) }
+        if showTouches { setNeedsDisplay() }
+    }
+
+    private func updateTouchPoints(_ touches: Set<UITouch>) {
+        guard showTouches else { return }
+        for t in touches { touchPoints[ObjectIdentifier(t)] = t.location(in: self) }
+        setNeedsDisplay()
+    }
+
+    // MARK: - Drawing the finger indicator
+    override func draw(_ rect: CGRect) {
+        guard showTouches, !touchPoints.isEmpty,
+              let ctx = UIGraphicsGetCurrentContext() else { return }
+        let tint = UIColor.systemBlue
+        let radius: CGFloat = 34
+        for point in touchPoints.values {
+            let dot = CGRect(x: point.x - radius, y: point.y - radius,
+                             width: radius * 2, height: radius * 2)
+            ctx.setFillColor(tint.withAlphaComponent(0.25).cgColor)
+            ctx.fillEllipse(in: dot)
+            ctx.setStrokeColor(tint.withAlphaComponent(0.9).cgColor)
+            ctx.setLineWidth(3)
+            ctx.strokeEllipse(in: dot)
+        }
+        // Finger count badge, centered.
+        let count = touchPoints.count
+        let label = count == 1 ? "1 finger" : "\(count) fingers"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 22, weight: .semibold),
+            .foregroundColor: UIColor.systemBlue
+        ]
+        let size = (label as NSString).size(withAttributes: attrs)
+        let origin = CGPoint(x: (bounds.width - size.width) / 2,
+                             y: max(12, bounds.height - size.height - 16))
+        (label as NSString).draw(at: origin, withAttributes: attrs)
     }
 
     // MARK: - Handlers
