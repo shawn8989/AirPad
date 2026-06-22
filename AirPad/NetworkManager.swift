@@ -44,6 +44,12 @@ final class NetworkManager: ObservableObject {
     @Published var connectingServiceID: UUID?
     @Published var lastErrorMessage: String?
 
+    // Which Mac we're currently talking to (learned from the server's server_info
+    // message). Per-Mac keys are stored under this ID so one AirPad can pair with
+    // and switch between multiple Macs.
+    var currentMacID: String?
+    @Published var currentMacName: String?
+
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
     @Published var pushedDesktops: [MacDesktopInfo] = []
@@ -236,6 +242,12 @@ final class NetworkManager: ObservableObject {
     // MARK: - Connect
     func connect(to service: DiscoveredService) {
         log("Connecting to service: \(service.name)")
+        // Tear down any existing connection so the user can switch Macs on the fly.
+        connection?.cancel()
+        connection = nil
+        currentMacID = nil
+        DispatchQueue.main.async { self.currentMacName = nil }
+
         lastService = service
         reconnectBackoff = 1.0
         reconnectTimer?.cancel()
@@ -402,28 +414,10 @@ final class NetworkManager: ObservableObject {
             guard let self = self else { return }
             do {
                 let deviceID = try self.security.getOrCreateDeviceID()
-                // If no shared secret, start pairing
-                if (try? self.security.getSharedSecret()) == nil {
-                    DispatchQueue.main.async { self.isPairing = true }
-                    let pairingRequest = [
-                        "deviceID": deviceID,
-                        "timestamp": ISO8601DateFormatter().string(from: Date()),
-                        "type": "pair_request",
-                        "payload": [:] as [String: Any]
-                    ]
-                    try self.sendRawJSON(pairingRequest)
-                } else {
-                    // Derive per-session key and send hello with session salt for server-side derivation
-                    var salt = Data(count: 16)
-                    _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
-                    self.sessionSalt = salt
-                    if let secret = try? self.security.getSharedSecret() {
-                        self.sessionKey = self.deriveSessionKey(sharedSecret: secret, salt: salt)
-                        self.messageCounter = 0
-                    }
-                    let saltB64 = salt.base64EncodedString()
-                    try self.send(type: "hello", payload: ["deviceID": deviceID, "session_salt": saltB64])
-                }
+                // Identify ourselves. The server replies with server_info (its
+                // macID), then either an auth_challenge (already paired with this
+                // Mac) or, after user approval, a pair_response.
+                try self.send(type: "hello", payload: ["deviceID": deviceID])
             } catch {
                 DispatchQueue.main.async { self.lastErrorMessage = "Handshake error: \(error)" }
             }
@@ -513,41 +507,49 @@ final class NetworkManager: ObservableObject {
             }
             self.log("RX type: \(type)")
             switch type {
+            case "server_info":
+                // The Mac told us its stable ID + name. Remember it so we use the
+                // right per-Mac key (and can show which Mac we're controlling).
+                if let payload = obj?["payload"] as? [String: Any], let macID = payload["macID"] as? String {
+                    self.currentMacID = macID
+                    let macName = payload["macName"] as? String
+                    DispatchQueue.main.async { self.currentMacName = macName }
+                }
+
             case "pair_response":
-                if let secretB64 = obj?["shared_secret"] as? String, let secret = Data(base64Encoded: secretB64) {
-                    try? security.storeSharedSecret(secret)
+                // Store the freshly paired secret under THIS Mac's ID. The server
+                // authorized us on approval, so there's no further handshake.
+                if let secretB64 = obj?["shared_secret"] as? String,
+                   let secret = Data(base64Encoded: secretB64),
+                   let macID = self.currentMacID {
+                    try? security.storeSharedSecret(secret, forMac: macID)
                     DispatchQueue.main.async { self.isPairing = false }
-                    // Send hello after pairing, deriving per-session key
-                    let deviceID = self.security.currentDeviceID ?? ""
-                    var salt = Data(count: 16)
-                    _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
-                    self.sessionSalt = salt
-                    if let s = try? self.security.getSharedSecret() {
-                        self.sessionKey = self.deriveSessionKey(sharedSecret: s, salt: salt)
-                        self.messageCounter = 0
-                    }
-                    try? self.send(type: "hello", payload: ["deviceID": deviceID, "session_salt": salt.base64EncodedString()])
                 }
 
             case "auth_challenge":
-                // The server sent a random nonce; prove we hold the shared secret
+                // The server sent a random nonce; prove we hold THIS Mac's secret
                 // by returning HMAC(secret, nonce). Until this passes, the server
                 // will not execute any of our commands.
                 if let payload = obj?["payload"] as? [String: Any],
                    let nonceB64 = payload["nonce"] as? String,
                    let nonce = Data(base64Encoded: nonceB64),
-                   let secret = (try? self.security.getSharedSecret()) ?? nil {
+                   let macID = self.currentMacID,
+                   let secret = (try? self.security.getSharedSecret(forMac: macID)) ?? nil {
                     let proof = self.security.hmacSHA256(data: nonce, key: secret)
                     try? self.send(type: "auth_proof", payload: ["proof": proof.base64EncodedString()])
                 } else {
-                    self.log("auth_challenge: no shared secret available to answer challenge")
+                    // Server thinks we're known but we have no key for this Mac
+                    // (e.g. an install that predates per-Mac keys). Re-pair.
+                    self.log("auth_challenge: no per-Mac secret; requesting re-pair")
+                    DispatchQueue.main.async { self.isPairing = true }
+                    try? self.send(type: "pair_request", payload: [:])
                 }
 
             case "auth_reset":
                 // Server could not verify our secret (typically a stale pairing).
-                // Clear it so the automatic reconnect performs a fresh pairing.
-                self.log("Server requested re-pair; clearing local shared secret")
-                try? self.security.deleteSharedSecret()
+                // Clear THIS Mac's key so the automatic reconnect re-pairs.
+                self.log("Server requested re-pair; clearing per-Mac secret")
+                if let macID = self.currentMacID { try? self.security.deleteSharedSecret(forMac: macID) }
                 DispatchQueue.main.async { self.isPairing = true }
 
             case "installed_apps":
