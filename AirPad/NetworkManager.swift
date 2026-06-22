@@ -33,9 +33,10 @@ final class NetworkManager: ObservableObject {
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "AirPad.Network")
 
-    // Outgoing packet throttling for mouse moves
+    // Outgoing input coalescing with backpressure (mouse + scroll). All access on `queue`.
     private var pendingMouseDelta: (dx: Double, dy: Double) = (0, 0)
-    private var mouseMoveTimer: DispatchSourceTimer?
+    private var pendingScrollDelta: (dx: Double, dy: Double) = (0, 0)
+    private var inputInFlight = false
     private var receiveBuffer = Data()
 
     @Published var discoveredServices: [DiscoveredService] = []
@@ -286,6 +287,10 @@ final class NetworkManager: ObservableObject {
                 }
                 self.inboundLastCounter = 0
                 self.inboundLastTimestamp = 0
+                // Reset input-coalescing state for the fresh connection.
+                self.inputInFlight = false
+                self.pendingMouseDelta = (0, 0)
+                self.pendingScrollDelta = (0, 0)
                 self.reconnectBackoff = 1.0
                 self.reconnectTimer?.cancel()
                 self.reconnectTimer = nil
@@ -707,34 +712,67 @@ final class NetworkManager: ObservableObject {
 
     // Public high-level events
     func sendMouseDelta(dx: Double, dy: Double) {
-        // Accumulate and throttle at ~120 Hz
-        pendingMouseDelta.dx += dx
-        pendingMouseDelta.dy += dy
-        if mouseMoveTimer == nil {
-            let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .milliseconds(2))
-            timer.setEventHandler { [weak self] in
-                guard let self = self else { return }
-                let delta = self.pendingMouseDelta
-                // Quantize to integer pixel steps and preserve fractional remainder.
-                let stepX = Int(delta.dx.rounded())
-                let stepY = Int(delta.dy.rounded())
-                if stepX != 0 || stepY != 0 {
-                    // Subtract the sent integer steps to keep fractional remainder for the next tick.
-                    self.pendingMouseDelta.dx -= Double(stepX)
-                    self.pendingMouseDelta.dy -= Double(stepY)
-                    try? self.send(type: "mouse_move", payload: ["dx": stepX, "dy": stepY])
-                    DispatchQueue.main.async { self.debugMouseMoveCount += 1 }
-                }
-            }
-            timer.resume()
-            mouseMoveTimer = timer
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.pendingMouseDelta.dx += dx
+            self.pendingMouseDelta.dy += dy
+            self.pumpInput()
         }
     }
 
     func sendScroll(dx: Double, dy: Double) {
-        try? send(type: "scroll", payload: ["dx": dx, "dy": dy])
-        DispatchQueue.main.async { self.debugScrollCount += 1 }
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.pendingScrollDelta.dx += dx
+            self.pendingScrollDelta.dy += dy
+            self.pumpInput()
+            DispatchQueue.main.async { self.debugScrollCount += 1 }
+        }
+    }
+
+    // Coalesce high-rate mouse/scroll input with backpressure: only one such
+    // packet is in flight at a time; deltas accumulated meanwhile are merged and
+    // sent on completion (latest-wins). This stops the send queue from backing up
+    // over time — the slowdown that previously needed a reconnect to clear.
+    // Must be called on `queue`.
+    private func pumpInput() {
+        guard !inputInFlight else { return }
+        // Mouse first: quantize to integer pixels, keep the fractional remainder.
+        let stepX = Int(pendingMouseDelta.dx.rounded())
+        let stepY = Int(pendingMouseDelta.dy.rounded())
+        if stepX != 0 || stepY != 0 {
+            pendingMouseDelta.dx -= Double(stepX)
+            pendingMouseDelta.dy -= Double(stepY)
+            sendCoalesced(type: "mouse_move", payload: ["dx": stepX, "dy": stepY])
+            DispatchQueue.main.async { self.debugMouseMoveCount += 1 }
+            return
+        }
+        // Then scroll.
+        if pendingScrollDelta.dx != 0 || pendingScrollDelta.dy != 0 {
+            let dx = pendingScrollDelta.dx, dy = pendingScrollDelta.dy
+            pendingScrollDelta = (0, 0)
+            sendCoalesced(type: "scroll", payload: ["dx": dx, "dy": dy])
+            return
+        }
+    }
+
+    // Send one coalesced packet and re-pump when it completes. Must be on `queue`.
+    private func sendCoalesced(type: String, payload: [String: Any]) {
+        guard let conn = connection else { inputInFlight = false; return }
+        do {
+            let packet = buildPacket(type: type, payload: payload)
+            var line = try JSONSerialization.data(withJSONObject: packet, options: [])
+            line.append(0x0A)
+            inputInFlight = true
+            conn.send(content: line, completion: .contentProcessed { [weak self] _ in
+                guard let self = self else { return }
+                // NWConnection completions run on the connection's queue (== self.queue).
+                self.inputInFlight = false
+                self.pumpInput()
+            })
+        } catch {
+            inputInFlight = false
+        }
     }
 
     func sendClick(button: String = "left") {
