@@ -144,24 +144,12 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
             let threshold: CGFloat = 40
             if abs(t.x) > abs(t.y) {
                 if abs(t.x) >= threshold {
-                    if t.x > 0 {
-                        NetworkManager.shared.sendAction("three_swipe_right")
-                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
-                    } else {
-                        NetworkManager.shared.sendAction("three_swipe_left")
-                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
-                    }
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: t.x > 0 ? "right" : "left")
                     if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 }
             } else {
                 if abs(t.y) >= threshold {
-                    if t.y > 0 {
-                        NetworkManager.shared.sendAction("three_swipe_down")
-                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "down")
-                    } else {
-                        NetworkManager.shared.sendAction("three_swipe_up")
-                        NetworkManager.shared.sendSwipe(fingers: 3, direction: "up")
-                    }
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: t.y > 0 ? "down" : "up")
                     if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 }
             }
