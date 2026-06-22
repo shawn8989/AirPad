@@ -796,6 +796,16 @@ final class NetworkManager: ObservableObject {
         try? send(type: "swipe", payload: ["fingers": fingers, "direction": direction])
     }
 
+    // Two-finger horizontal flick -> browser back/forward. direction: "back"|"forward".
+    func sendNav(direction: String) {
+        try? send(type: "nav", payload: ["direction": direction])
+    }
+
+    // Pinch -> zoom. zoomIn = true for pinch-out (zoom in), false for pinch-in.
+    func sendPinch(zoomIn: Bool) {
+        try? send(type: "pinch", payload: ["direction": zoomIn ? "in" : "out"])
+    }
+
     func sendKeyDown(keyCode: UInt16) {
         try? send(type: "key_down", payload: ["keyCode": Int(keyCode)])
     }

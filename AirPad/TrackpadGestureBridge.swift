@@ -23,6 +23,7 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
     private var hapticsEnabled: Bool = true
 
     private var dragLocked = false
+    private var pinchAccum: CGFloat = 1.0
     private var lastPanTranslation: CGPoint = .zero
     private var lastTwoPanTranslation: CGPoint = .zero
 
@@ -46,6 +47,20 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         let g = UIPanGestureRecognizer(target: self, action: #selector(handleThreePan(_:)))
         g.minimumNumberOfTouches = 3
         g.maximumNumberOfTouches = 3
+        g.delegate = self
+        return g
+    }()
+
+    private lazy var fourPan: UIPanGestureRecognizer = {
+        let g = UIPanGestureRecognizer(target: self, action: #selector(handleFourPan(_:)))
+        g.minimumNumberOfTouches = 4
+        g.maximumNumberOfTouches = 4
+        g.delegate = self
+        return g
+    }()
+
+    private lazy var pinch: UIPinchGestureRecognizer = {
+        let g = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         g.delegate = self
         return g
     }()
@@ -84,6 +99,8 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
             addGestureRecognizer(onePan)
             addGestureRecognizer(twoPan)
             addGestureRecognizer(threePan)
+            addGestureRecognizer(fourPan)
+            addGestureRecognizer(pinch)
             addGestureRecognizer(oneTap)
             addGestureRecognizer(oneDoubleTap)
             addGestureRecognizer(twoTap)
@@ -129,9 +146,56 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
                 NetworkManager.shared.sendScroll(dx: Double(dx), dy: Double(dy))
             }
             lastTwoPanTranslation = t
-        case .ended, .cancelled, .failed:
+        case .ended:
+            // A fast horizontal two-finger flick navigates back/forward.
+            let v = g.velocity(in: self)
+            if abs(v.x) > 900 && abs(v.x) > abs(v.y) * 2.5 {
+                NetworkManager.shared.sendNav(direction: v.x > 0 ? "back" : "forward")
+                if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            }
+            lastTwoPanTranslation = .zero
+        case .cancelled, .failed:
             lastTwoPanTranslation = .zero
         default: break
+        }
+    }
+
+    @objc private func handleFourPan(_ g: UIPanGestureRecognizer) {
+        guard g.state == .ended else { return }
+        let t = g.translation(in: self)
+        let threshold: CGFloat = 40
+        if abs(t.x) > abs(t.y) {
+            if abs(t.x) >= threshold {
+                NetworkManager.shared.sendSwipe(fingers: 4, direction: t.x > 0 ? "right" : "left")
+                if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            }
+        } else {
+            if abs(t.y) >= threshold {
+                NetworkManager.shared.sendSwipe(fingers: 4, direction: t.y > 0 ? "down" : "up")
+                if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+            }
+        }
+    }
+
+    @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
+        switch g.state {
+        case .began:
+            pinchAccum = 1.0
+        case .changed:
+            pinchAccum *= g.scale
+            g.scale = 1.0
+            // Emit a discrete zoom step each time the cumulative scale crosses a threshold.
+            if pinchAccum >= 1.25 {
+                NetworkManager.shared.sendPinch(zoomIn: true)
+                pinchAccum = 1.0
+                if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            } else if pinchAccum <= 0.8 {
+                NetworkManager.shared.sendPinch(zoomIn: false)
+                pinchAccum = 1.0
+                if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            }
+        default:
+            break
         }
     }
 
