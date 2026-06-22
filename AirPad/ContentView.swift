@@ -19,6 +19,26 @@ struct ContentView: View {
                 if network.isConnected {
                     MainControlView(showKeyboard: $showKeyboard)
                         .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Menu {
+                                    if network.discoveredServices.isEmpty {
+                                        Text("Searching for Macs…")
+                                    }
+                                    ForEach(network.discoveredServices, id: \.id) { service in
+                                        Button {
+                                            network.connect(to: service)
+                                        } label: {
+                                            if service.name == network.currentMacName {
+                                                Label("\(service.name) (current)", systemImage: "checkmark")
+                                            } else {
+                                                Text(service.name)
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Label(network.currentMacName ?? "Mac", systemImage: "desktopcomputer")
+                                }
+                            }
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button("Disconnect") { network.disconnect() }
                             }
@@ -27,7 +47,7 @@ struct ContentView: View {
                     ConnectionView()
                 }
             }
-            .navigationTitle("AirPad")
+            .navigationTitle(network.isConnected ? (network.currentMacName ?? "AirPad") : "AirPad")
         }
         .sheet(isPresented: $showKeyboard) {
             KeyboardView()
