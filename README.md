@@ -31,6 +31,7 @@ It is a functioning system designed with extensibility, safety, and polish in mi
 - Keyboard input with key-down / key-up handling
 - Haptic feedback for interaction confirmation
 - Secure device pairing and reconnection
+- Pair with multiple Macs and switch between them on the fly
 - Low-latency input batching for smooth cursor motion
 
 ### AirBridge (macOS)
@@ -54,9 +55,9 @@ It is a functioning system designed with extensibility, safety, and polish in mi
 
 ### Key Design Decisions
 - **Local-only networking** (no internet dependency)
-- **TLS encryption** for all traffic
-- **HMAC-SHA256 packet signing**
-- **Strict timestamp validation** to prevent replay attacks
+- **TLS (TLS-PSK) encryption** for all traffic
+- **Per-device HMAC-SHA256 authentication** (challenge-response)
+- **Low-latency transport** (Nagle's algorithm disabled) for smooth real-time control
 - **Minimal macOS entitlements** for reduced attack surface
 
 ---
@@ -65,14 +66,21 @@ It is a functioning system designed with extensibility, safety, and polish in mi
 
 Security is treated as a first-class feature.
 
-- Devices must explicitly pair with user approval
-- A 256-bit shared secret is generated per device
-- Every packet is signed with HMAC-SHA256
-- Invalid signatures or stale packets are rejected
-- Secrets are stored in the system Keychain
-- No packets are accepted from untrusted devices
+- **Encrypted transport:** all traffic runs over TLS (TLS-PSK), so input and
+  screen data are encrypted on the local network.
+- **Explicit pairing:** a new device must be approved on the Mac before it can
+  control anything. A 256-bit per-device secret is generated and stored in the
+  system Keychain (keyed per Mac on the iPhone, per device on the Mac).
+- **Per-device authentication:** on every connection the device proves it holds
+  its secret via an HMAC-SHA256 challenge-response — a device ID alone is not
+  sufficient.
+- **Command gating:** the Mac executes no input or queries until the connection
+  is authenticated; unknown or failed devices are rejected.
+- **Self-healing pairing:** a stale or mismatched pairing automatically triggers
+  a clean re-pair instead of failing permanently.
 
-This mirrors real-world secure input and control systems.
+Pairing today uses an approval prompt on the Mac; a QR / short-code pairing flow
+is in progress.
 
 ---
 
@@ -100,11 +108,11 @@ This mirrors real-world secure input and control systems.
 
 ## Future Enhancements
 
+- QR / short-code pairing (in progress)
 - Customizable sensitivity and gesture mapping
 - Modifier-key overlays and macro buttons
 - Gyroscope-based cursor control mode
 - Optional remote desktop streaming mode
-- Multi-device support
 
 ---
 
