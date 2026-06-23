@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuartzCore
 
 struct TrackpadGestureBridge: UIViewRepresentable {
     var pointerSensitivity: Double
@@ -25,40 +26,27 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
 
     private var dragLocked = false
     private var pinchAccum: CGFloat = 1.0
-    private var lastPanTranslation: CGPoint = .zero
-    private var lastTwoPanTranslation: CGPoint = .zero
 
-    // Live finger-tracking for the on-screen touch indicator AND for manual
-    // 3-/4-finger swipe detection. touchPoints is rebuilt from the authoritative
-    // event.allTouches on every callback, so a missed touchesEnded can never
-    // leave a phantom finger behind.
+    // Live finger-tracking for the on-screen touch indicator AND for all pan
+    // handling (mouse move, scroll, multi-finger swipes). touchPoints is rebuilt
+    // from the authoritative event.allTouches on every callback, so a missed
+    // touchesEnded can never leave a phantom finger behind.
     private var showTouches: Bool = true
     private var touchPoints: [ObjectIdentifier: CGPoint] = [:]
 
-    // Manual multi-finger swipe state. We classify 3-/4-finger swipes ourselves
-    // because stacked UIPanGestureRecognizers fire unreliably when fingers land
-    // staggered (the 1-/2-finger pans grab the touches first).
+    // Pan/swipe state. We do ALL pan handling manually rather than with
+    // UIPanGestureRecognizers: recognizer actions fire before the view's touch
+    // callbacks, so a recognizer-based gate against the live finger count is
+    // always one event stale and leaks cursor movement into multi-finger swipes.
+    // Tracking every touch here in one place keeps a single, correctly-ordered
+    // source of truth.
     private var touchStarts: [ObjectIdentifier: CGPoint] = [:]
+    private var touchPrev: [ObjectIdentifier: CGPoint] = [:]
     private var gesturePeak: Int = 0
+    private var gestureStartTime: TimeInterval = 0
     private var endedDisplacement: CGPoint = .zero
     private var endedCount: Int = 0
     private var tracking: Bool = false
-
-    private lazy var onePan: UIPanGestureRecognizer = {
-        let g = UIPanGestureRecognizer(target: self, action: #selector(handleOnePan(_:)))
-        g.minimumNumberOfTouches = 1
-        g.maximumNumberOfTouches = 1
-        g.delegate = self
-        return g
-    }()
-
-    private lazy var twoPan: UIPanGestureRecognizer = {
-        let g = UIPanGestureRecognizer(target: self, action: #selector(handleTwoPan(_:)))
-        g.minimumNumberOfTouches = 2
-        g.maximumNumberOfTouches = 2
-        g.delegate = self
-        return g
-    }()
 
     private lazy var pinch: UIPinchGestureRecognizer = {
         let g = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
@@ -99,17 +87,16 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         isOpaque = false
         backgroundColor = .clear
         if gestureRecognizers == nil || gestureRecognizers?.isEmpty == true {
-            addGestureRecognizer(onePan)
-            addGestureRecognizer(twoPan)
+            // Only discrete gestures use recognizers now; all panning/swiping is
+            // handled in touchesBegan/Moved/Ended below.
             addGestureRecognizer(pinch)
             addGestureRecognizer(oneTap)
             addGestureRecognizer(oneDoubleTap)
             addGestureRecognizer(twoTap)
             oneTap.require(toFail: oneDoubleTap)
-            // Keep touches flowing to this view's touchesBegan/Moved so both the
-            // finger indicator and our manual 3-/4-finger swipe detection keep
-            // seeing every touch even after a recognizer engages.
-            for g in [onePan, twoPan, pinch, oneTap, oneDoubleTap, twoTap] as [UIGestureRecognizer] {
+            // Keep touches flowing to this view's touchesBegan/Moved so manual
+            // pan handling keeps seeing every touch even after a recognizer engages.
+            for g in [pinch, oneTap, oneDoubleTap, twoTap] as [UIGestureRecognizer] {
                 g.cancelsTouchesInView = false
             }
         }
@@ -140,9 +127,13 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         syncTouches(event)
     }
 
-    /// Rebuilds the active-touch set from the authoritative event.allTouches,
-    /// accumulates the displacement of fingers as they lift, tracks the peak
-    /// simultaneous finger count, and fires the swipe once all fingers are up.
+    /// Single source of truth for all panning. Rebuilds the active-touch set
+    /// from the authoritative event.allTouches, drives 1-finger cursor movement
+    /// and 2-finger scrolling from the live touches, accumulates per-touch
+    /// displacement for 3-/4-finger swipe classification, and fires the swipe
+    /// once all fingers lift. Because this runs in the view's own touch
+    /// callbacks, the live finger count is never stale, so movement never leaks
+    /// into a multi-finger gesture.
     private func syncTouches(_ event: UIEvent?) {
         let all = event?.allTouches ?? []
         var live: [ObjectIdentifier: CGPoint] = [:]
@@ -171,8 +162,33 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
             touchStarts[id] = nil
         }
 
-        if !live.isEmpty { tracking = true }
+        if !live.isEmpty && !tracking {
+            tracking = true
+            gestureStartTime = CACurrentMediaTime()
+        }
         gesturePeak = max(gesturePeak, live.count)
+
+        // Continuous movement: 1 finger -> cursor, 2 fingers -> scroll. Gated on
+        // the peak count so once a 3rd finger has appeared nothing moves, and a
+        // 2-finger gesture that drops to 1 finger doesn't suddenly jump the cursor.
+        if gesturePeak == 1 && live.count == 1, let (id, loc) = live.first,
+           let prev = touchPrev[id] {
+            let dx = Double(loc.x - prev.x) * Double(pointerSensitivity)
+            let dy = Double(loc.y - prev.y) * Double(pointerSensitivity)
+            if dx != 0 || dy != 0 { NetworkManager.shared.sendMouseDelta(dx: dx, dy: dy) }
+        } else if gesturePeak == 2 && live.count == 2 {
+            var sumX: CGFloat = 0, sumY: CGFloat = 0, n = 0
+            for (id, loc) in live {
+                if let prev = touchPrev[id] { sumX += loc.x - prev.x; sumY += loc.y - prev.y; n += 1 }
+            }
+            if n > 0 {
+                var dx = sumX / CGFloat(n), dy = sumY / CGFloat(n)
+                if !naturalScroll { dx = -dx; dy = -dy }
+                if dx != 0 || dy != 0 { NetworkManager.shared.sendScroll(dx: Double(dx), dy: Double(dy)) }
+            }
+        }
+
+        touchPrev = live
         touchPoints = live
         if showTouches { setNeedsDisplay() }
 
@@ -181,15 +197,16 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    /// Classifies the completed gesture and emits a 3-/4-finger swipe if it
-    /// traveled far enough in a dominant direction.
+    /// Classifies the completed gesture: a 3-/4-finger swipe by direction, or a
+    /// fast 2-finger horizontal flick into browser back/forward.
     private func finalizeGesture() {
         let peak = gesturePeak
         let n = max(endedCount, 1)
         let avg = CGPoint(x: endedDisplacement.x / CGFloat(n),
                           y: endedDisplacement.y / CGFloat(n))
-        let threshold: CGFloat = 40
+        let duration = max(CACurrentMediaTime() - gestureStartTime, 0.001)
         if peak == 3 || peak == 4 {
+            let threshold: CGFloat = 40
             if abs(avg.x) > abs(avg.y) {
                 if abs(avg.x) >= threshold {
                     NetworkManager.shared.sendSwipe(fingers: peak, direction: avg.x > 0 ? "right" : "left")
@@ -199,12 +216,20 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
                 NetworkManager.shared.sendSwipe(fingers: peak, direction: avg.y > 0 ? "down" : "up")
                 if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
             }
+        } else if peak == 2 {
+            // Fast horizontal 2-finger flick -> browser back/forward.
+            let velX = avg.x / CGFloat(duration)
+            if abs(velX) > 900 && abs(avg.x) > abs(avg.y) * 2.5 {
+                NetworkManager.shared.sendNav(direction: velX > 0 ? "back" : "forward")
+                if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            }
         }
         gesturePeak = 0
         endedDisplacement = .zero
         endedCount = 0
         tracking = false
         touchStarts.removeAll()
+        touchPrev.removeAll()
     }
 
     // MARK: - Drawing the finger indicator
@@ -236,61 +261,6 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
     }
 
     // MARK: - Handlers
-    @objc private func handleOnePan(_ g: UIPanGestureRecognizer) {
-        // Suppress cursor movement once a multi-finger swipe is underway.
-        if gesturePeak >= 3 || touchPoints.count > 1 { lastPanTranslation = .zero; return }
-        switch g.state {
-        case .began:
-            lastPanTranslation = .zero
-        case .changed:
-            let t = g.translation(in: self)
-            let dx = (t.x - lastPanTranslation.x) * pointerSensitivity
-            let dy = (t.y - lastPanTranslation.y) * pointerSensitivity
-            NetworkManager.shared.sendMouseDelta(dx: Double(dx), dy: Double(dy))
-            lastPanTranslation = t
-        case .ended, .cancelled, .failed:
-            lastPanTranslation = .zero
-        default: break
-        }
-    }
-
-    @objc private func handleTwoPan(_ g: UIPanGestureRecognizer) {
-        // Suppress scrolling once a 3-/4-finger swipe is underway.
-        if gesturePeak >= 3 || touchPoints.count > 2 { lastTwoPanTranslation = .zero; return }
-        switch g.state {
-        case .began:
-            lastTwoPanTranslation = .zero
-        case .changed:
-            let t = g.translation(in: self)
-            var dx = (t.x - lastTwoPanTranslation.x)
-            var dy = (t.y - lastTwoPanTranslation.y)
-            if !naturalScroll {
-                dx = -dx; dy = -dy
-            }
-            // Edge horizontal mapping: if start near left/right 10%, map vertical to horizontal
-            let start = g.location(ofTouch: 0, in: self)
-            let nearLeft = start.x < bounds.width * 0.1
-            let nearRight = start.x > bounds.width * 0.9
-            if nearLeft || nearRight {
-                NetworkManager.shared.sendScroll(dx: Double(dy), dy: 0)
-            } else {
-                NetworkManager.shared.sendScroll(dx: Double(dx), dy: Double(dy))
-            }
-            lastTwoPanTranslation = t
-        case .ended:
-            // A fast horizontal two-finger flick navigates back/forward.
-            let v = g.velocity(in: self)
-            if abs(v.x) > 900 && abs(v.x) > abs(v.y) * 2.5 {
-                NetworkManager.shared.sendNav(direction: v.x > 0 ? "back" : "forward")
-                if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-            }
-            lastTwoPanTranslation = .zero
-        case .cancelled, .failed:
-            lastTwoPanTranslation = .zero
-        default: break
-        }
-    }
-
     @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
         switch g.state {
         case .began:
