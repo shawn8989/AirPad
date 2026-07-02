@@ -39,6 +39,12 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
     private var lastGestureTime: TimeInterval = 0
     private var lastPalmX: CGFloat?
     private var palmTravel: CGFloat = 0
+    // Pose debouncing: a new pose must persist for several consecutive frames
+    // before it takes effect, and movement freezes briefly after a switch, so
+    // forming a gesture doesn't twitch the cursor off its target.
+    private var candidatePose: HandPose = .none
+    private var candidateFrames = 0
+    private var freezeUntil: TimeInterval = 0
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -114,16 +120,31 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
         }
         lostFrames = 0
 
-        let newPose = classifyPose(hand: hand, wrist: wrist)
-        if newPose != currentPose {
-            currentPose = newPose
-            // Pose changed: restart positional tracking so the cursor doesn't jump.
-            smoothed = nil
-            lastSent = nil
-            lastPalmX = nil
-            palmTravel = 0
-            palmStillSince = CACurrentMediaTime()
-            DispatchQueue.main.async { self.pose = newPose }
+        // Debounce pose changes: classification flickers while fingers are mid-
+        // transition, so require the same new pose for 4 consecutive frames.
+        let observed = classifyPose(hand: hand, wrist: wrist)
+        if observed == currentPose {
+            candidateFrames = 0
+        } else {
+            if observed == candidatePose {
+                candidateFrames += 1
+            } else {
+                candidatePose = observed
+                candidateFrames = 1
+            }
+            if candidateFrames >= 4 {
+                currentPose = observed
+                candidateFrames = 0
+                // Restart positional tracking and freeze motion briefly so the
+                // cursor stays planted while the hand settles into the new pose.
+                smoothed = nil
+                lastSent = nil
+                lastPalmX = nil
+                palmTravel = 0
+                palmStillSince = CACurrentMediaTime()
+                freezeUntil = CACurrentMediaTime() + 0.3
+                DispatchQueue.main.async { self.pose = observed }
+            }
         }
 
         switch currentPose {
@@ -132,10 +153,32 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
         case .palm:
             trackPalmGestures(hand: hand)
         case .scroll:
-            trackScroll(index: index)
+            trackScroll(hand: hand, index: index)
         case .none:
-            break
+            // First stable detection enters pointer mode via the debounce above;
+            // seed it immediately so the hand is usable as soon as it appears.
+            currentPose = .pointer
+            DispatchQueue.main.async { self.pose = .pointer }
         }
+    }
+
+    /// Stable hand anchor: the average of the four knuckles (MCP joints).
+    /// Knuckles barely move when fingers curl, pinch, or change pose, so the
+    /// cursor doesn't jump when you click — and you can move the cursor with a
+    /// relaxed hand instead of holding a rigid point.
+    private func handAnchor(_ hand: VNHumanHandPoseObservation) -> CGPoint? {
+        let joints: [VNHumanHandPoseObservation.JointName] = [.indexMCP, .middleMCP, .ringMCP, .littleMCP]
+        var sum = CGPoint.zero
+        var n = 0
+        for j in joints {
+            if let p = try? hand.recognizedPoint(j), p.confidence > 0.3 {
+                sum.x += p.location.x
+                sum.y += p.location.y
+                n += 1
+            }
+        }
+        guard n > 0 else { return nil }
+        return CGPoint(x: sum.x / CGFloat(n), y: sum.y / CGFloat(n))
     }
 
     /// Extended-finger classification: a finger is "up" when its tip is
@@ -167,15 +210,31 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
         CGPoint(x: 1 - location.y, y: location.x)
     }
 
-    private func trackPointer(hand: VNHumanHandPoseObservation, index: VNRecognizedPoint) {
-        var p = screenPoint(for: index.location)
-        if let s = smoothed {
-            let alpha: CGFloat = 0.4
-            p = CGPoint(x: s.x + (p.x - s.x) * alpha, y: s.y + (p.y - s.y) * alpha)
+    /// Adaptive smoothing: heavy when the hand is nearly still (kills jitter on
+    /// a target), light when moving fast (keeps the cursor responsive).
+    private func smooth(_ raw: CGPoint) -> CGPoint {
+        guard let s = smoothed else {
+            smoothed = raw
+            return raw
         }
+        let speed = hypot(raw.x - s.x, raw.y - s.y)
+        let alpha = min(max(speed * 25.0, 0.12), 0.8)
+        let p = CGPoint(x: s.x + (raw.x - s.x) * alpha, y: s.y + (raw.y - s.y) * alpha)
         smoothed = p
+        return p
+    }
 
-        if let last = lastSent {
+    private var isFrozen: Bool { CACurrentMediaTime() < freezeUntil }
+
+    private func trackPointer(hand: VNHumanHandPoseObservation, index: VNRecognizedPoint) {
+        // Cursor follows the knuckle anchor, not the fingertip, so pinching to
+        // click doesn't nudge the cursor off its target.
+        guard let anchor = handAnchor(hand) else { return }
+        let p = smooth(screenPoint(for: anchor))
+
+        if isFrozen {
+            lastSent = p
+        } else if let last = lastSent {
             let dx = Double(p.x - last.x) * 1600.0 * sensitivity
             let dy = Double(p.y - last.y) * 1600.0 * sensitivity
             if abs(dx) >= 0.5 || abs(dy) >= 0.5 {
@@ -212,8 +271,8 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
     /// Mission Control. The pointer stays paused the whole time.
     private func trackPalmGestures(hand: VNHumanHandPoseObservation) {
         releasePinchIfNeeded()
-        guard let middle = try? hand.recognizedPoint(.middleTip) else { return }
-        let x = screenPoint(for: middle.location).x
+        guard !isFrozen, let anchor = handAnchor(hand) else { return }
+        let x = screenPoint(for: anchor).x
         let now = CACurrentMediaTime()
 
         if let last = lastPalmX {
@@ -241,15 +300,13 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
     }
 
     /// Two-finger V: vertical hand motion scrolls.
-    private func trackScroll(index: VNRecognizedPoint) {
+    private func trackScroll(hand: VNHumanHandPoseObservation, index: VNRecognizedPoint) {
         releasePinchIfNeeded()
-        var p = screenPoint(for: index.location)
-        if let s = smoothed {
-            let alpha: CGFloat = 0.4
-            p = CGPoint(x: s.x + (p.x - s.x) * alpha, y: s.y + (p.y - s.y) * alpha)
-        }
-        smoothed = p
-        if let last = lastSent {
+        guard let anchor = handAnchor(hand) else { return }
+        let p = smooth(screenPoint(for: anchor))
+        if isFrozen {
+            lastSent = p
+        } else if let last = lastSent {
             let dy = Double(p.y - last.y) * 1400.0 * sensitivity
             if abs(dy) >= 0.5 {
                 NetworkManager.shared.sendScroll(dx: 0, dy: -dy)
@@ -352,8 +409,8 @@ struct HandMouseView: View {
             .padding(.horizontal)
 
             VStack(alignment: .leading, spacing: 4) {
-                Label("Point: move finger to steer • pinch = click, hold pinch = drag", systemImage: "hand.point.up.left")
-                Label("Open palm: swipe left/right = switch desktop • hold still = Mission Control", systemImage: "hand.raised")
+                Label("Move: a relaxed hand steers the cursor • pinch thumb+index = click, hold = drag", systemImage: "hand.point.up.left")
+                Label("Open palm (fingers spread): swipe left/right = switch desktop • hold still = Mission Control", systemImage: "hand.raised")
                 Label("Two-finger V: move up/down to scroll", systemImage: "hand.point.up.braille")
             }
             .font(.caption)

@@ -26,7 +26,7 @@ struct HelpView: View {
             }
 
             Section("Hand Mouse (camera)") {
-                gestureRow("hand.point.up.left", "Point", "Index finger steers the cursor. Pinch thumb+index = click; hold the pinch = drag.")
+                gestureRow("hand.point.up.left", "Move", "A relaxed hand steers the cursor (it tracks your knuckles, so clicking won't nudge it). Pinch thumb+index = click; hold the pinch = drag.")
                 gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control.")
                 gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
                 helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The border color shows the detected pose. Video is processed on-device and never transmitted.")

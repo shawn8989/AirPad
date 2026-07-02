@@ -37,6 +37,9 @@ final class NetworkManager: ObservableObject {
     private var pendingMouseDelta: (dx: Double, dy: Double) = (0, 0)
     private var pendingScrollDelta: (dx: Double, dy: Double) = (0, 0)
     private var inputInFlight = false
+    // Owned by `queue`; flushed to the @Published debug counters in batches.
+    private var localMoveCount = 0
+    private var localScrollCount = 0
     private var receiveBuffer = Data()
 
     @Published var discoveredServices: [DiscoveredService] = []
@@ -105,8 +108,12 @@ final class NetworkManager: ObservableObject {
         startBrowsing()
     }
 
+    // Shared formatter: allocating an ISO8601DateFormatter per log line is
+    // expensive enough to matter on hot paths.
+    private static let logTimestampFormatter = ISO8601DateFormatter()
+
     private func log(_ message: String) {
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = Self.logTimestampFormatter.string(from: Date())
         let line = "[\(ts)] \(message)"
         DispatchQueue.main.async {
             self.debugLogs.append(line)
@@ -511,7 +518,9 @@ final class NetworkManager: ObservableObject {
                     if requireInboundHMAC { return }
                 }
             }
-            self.log("RX type: \(type)")
+            // Live-screen frames arrive up to ~30x/s; logging each one hops to
+            // the main thread and invalidates SwiftUI, adding input latency.
+            if type != "video_jpeg" { self.log("RX type: \(type)") }
             switch type {
             case "server_info":
                 // The Mac told us its stable ID + name. Remember it so we use the
@@ -736,7 +745,12 @@ final class NetworkManager: ObservableObject {
             self.pendingScrollDelta.dx += dx
             self.pendingScrollDelta.dy += dy
             self.pumpInput()
-            DispatchQueue.main.async { self.debugScrollCount += 1 }
+            // Batched like the mouse counter to avoid per-event main-thread hops.
+            self.localScrollCount += 1
+            if self.localScrollCount % 20 == 0 {
+                let c = self.localScrollCount
+                DispatchQueue.main.async { self.debugScrollCount = c }
+            }
         }
     }
 
@@ -754,7 +768,13 @@ final class NetworkManager: ObservableObject {
             pendingMouseDelta.dx -= Double(stepX)
             pendingMouseDelta.dy -= Double(stepY)
             sendCoalesced(type: "mouse_move", payload: ["dx": stepX, "dy": stepY])
-            DispatchQueue.main.async { self.debugMouseMoveCount += 1 }
+            // Batch the debug counter: a main-thread hop + SwiftUI invalidation
+            // per packet at ~120 Hz adds measurable input latency.
+            localMoveCount += 1
+            if localMoveCount % 20 == 0 {
+                let c = localMoveCount
+                DispatchQueue.main.async { self.debugMouseMoveCount = c }
+            }
             return
         }
         // Then scroll.

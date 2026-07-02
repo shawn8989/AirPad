@@ -32,7 +32,7 @@ struct OnboardingView: View {
             OnboardingPage(
                 title: "Hand Mouse",
                 systemImage: "hand.point.up.left",
-                text: "The front camera tracks your hand. Point with your index finger to move the cursor, pinch thumb+index to click, hold the pinch to drag.",
+                text: "The front camera tracks your hand. Move a relaxed hand to steer the cursor, pinch thumb+index to click, hold the pinch to drag.",
                 detail: "Open palm: swipe = switch desktop, hold still = Mission Control. Two-finger V: scroll. Video never leaves your phone."
             )
             OnboardingPage(

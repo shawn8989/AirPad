@@ -126,9 +126,12 @@ struct ConnectionView: View {
     }
 }
 
-// Main control view showing a trackpad and a button to open the keyboard.
+// Main control view: trackpad on top, one row of quick actions, then a grid
+// of modes/tools. Everything fits on screen — no horizontal overflow.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
+
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
 
     var body: some View {
         VStack(spacing: 12) {
@@ -136,117 +139,68 @@ struct MainControlView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding()
+                .padding([.horizontal, .top])
 
-            HStack {
-                Button {
-                    showKeyboard = true
-                } label: {
-                    Label("Keyboard", systemImage: "keyboard")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.borderedProminent)
-                .labelStyle(.titleAndIcon)
-
+            // Quick actions
+            HStack(spacing: 10) {
                 Button {
                     NetworkManager.shared.sendClick(button: "left")
                 } label: {
                     Label("Click", systemImage: "cursorarrow.click")
                         .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
                 }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
+                .buttonStyle(.borderedProminent)
 
                 Button {
                     NetworkManager.shared.sendClick(button: "right")
                 } label: {
                     Label("Right Click", systemImage: "cursorarrow.rays")
                         .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
                 }
                 .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-                
-                NavigationLink(destination: AirMouseView()) {
-                    Label("Air Mouse", systemImage: "dot.circle.and.hand.point.up.left.fill")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
 
-                NavigationLink(destination: HandMouseView()) {
-                    Label("Hand Mouse", systemImage: "hand.point.up.left.and.text.fill")
+                Button {
+                    showKeyboard = true
+                } label: {
+                    Label("Keyboard", systemImage: "keyboard")
                         .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
                 }
                 .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
+            }
+            .lineLimit(1)
+            .padding(.horizontal)
 
-                NavigationLink(destination: MediaControlsView()) {
-                    Label("Media", systemImage: "playpause.fill")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-
-                NavigationLink(destination: DictationView()) {
-                    Label("Dictate", systemImage: "mic.fill")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-
-                NavigationLink(destination: SettingsView()) {
-                    Label("Settings", systemImage: "gearshape")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-
-                NavigationLink(destination: LiveScreenView()) {
-                    Label("Live Screen", systemImage: "display")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-
-                NavigationLink(destination: AppShortcutsView()) {
-                    Label("Apps", systemImage: "app")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
+            // Modes & tools
+            LazyVGrid(columns: gridColumns, spacing: 10) {
+                modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill") { AirMouseView() }
+                modeTile("Hand Mouse", "hand.point.up.left") { HandMouseView() }
+                modeTile("Live Screen", "display") { LiveScreenView() }
+                modeTile("Media", "playpause.fill") { MediaControlsView() }
+                modeTile("Dictate", "mic.fill") { DictationView() }
+                modeTile("Apps", "square.grid.2x2") { AppShortcutsView() }
+                modeTile("Settings", "gearshape") { SettingsView() }
+                modeTile("Help", "questionmark.circle") { HelpView() }
             }
             .padding([.horizontal, .bottom])
         }
+    }
+
+    private func modeTile<D: View>(_ title: String, _ icon: String, @ViewBuilder destination: () -> D) -> some View {
+        NavigationLink(destination: destination()) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                Text(title)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
     }
 }
 
