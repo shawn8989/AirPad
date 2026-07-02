@@ -1,32 +1,44 @@
 import SwiftUI
 import AVFoundation
 import Vision
+import QuartzCore
 
 /// Camera hand-tracking pointer ("Hand Mouse"): the front camera watches your
-/// hand via Vision's hand-pose detector. Moving your index fingertip steers
-/// the Mac cursor; pinching thumb and index together presses the mouse button
-/// (quick pinch = click, hold = drag). All processing is on-device; only the
-/// same small mouse packets as the trackpad go over the network.
+/// hand via Vision's hand-pose detector. All processing is on-device; only the
+/// same small input packets as the trackpad go over the network.
+///
+/// Poses:
+///  - Point (index finger, or relaxed hand) — fingertip steers the cursor;
+///    pinch thumb+index to click, hold the pinch to drag.
+///  - Open palm (all fingers spread) — pointer pauses; swipe the palm left or
+///    right to switch desktops; hold the palm still to open Mission Control.
+///  - Two-finger "V" (index+middle up) — move the hand up/down to scroll.
 final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    enum HandPose: String { case none = "No hand", pointer = "Pointer", palm = "Palm", scroll = "Scroll" }
+
     let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private let cameraQueue = DispatchQueue(label: "airpad.handmouse.camera")
     private let request = VNDetectHumanHandPoseRequest()
 
     @Published var running = false
-    @Published var handVisible = false
+    @Published var pose: HandPose = .none
     @Published var pinching = false
     @Published var permissionDenied = false
 
     var sensitivity: Double = 1.0
     var trackingEnabled = true
 
-    // Smoothed fingertip position (normalized 0...1) and pinch state, owned by
-    // the camera queue.
+    // Camera-queue state.
     private var smoothed: CGPoint?
     private var lastSent: CGPoint?
     private var pinchActive = false
     private var lostFrames = 0
+    private var currentPose: HandPose = .none
+    private var palmStillSince: TimeInterval = 0
+    private var lastGestureTime: TimeInterval = 0
+    private var lastPalmX: CGFloat?
+    private var palmTravel: CGFloat = 0
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -73,12 +85,20 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
                 self.pinchActive = false
                 NetworkManager.shared.sendMouseUp(button: "left")
             }
-            self.smoothed = nil
-            self.lastSent = nil
+            self.resetTracking()
         }
         running = false
-        handVisible = false
+        pose = .none
         pinching = false
+    }
+
+    private func resetTracking() {
+        smoothed = nil
+        lastSent = nil
+        lastPalmX = nil
+        palmTravel = 0
+        palmStillSince = 0
+        currentPose = .none
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -87,21 +107,68 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
         try? handler.perform([request])
 
         guard let hand = request.results?.first,
-              let index = try? hand.recognizedPoint(.indexTip), index.confidence > 0.35 else {
+              let index = try? hand.recognizedPoint(.indexTip), index.confidence > 0.35,
+              let wrist = try? hand.recognizedPoint(.wrist), wrist.confidence > 0.2 else {
             handLost()
             return
         }
-
         lostFrames = 0
-        if !handVisible { DispatchQueue.main.async { self.handVisible = true } }
 
-        // Vision coordinates are normalized with origin at bottom-left of the
-        // (landscape, mirrored) front-camera frame. Map so that moving the hand
-        // right/up on screen moves the cursor right/up regardless.
-        var p = CGPoint(x: 1 - index.location.y, y: 1 - index.location.x)
-        p.x = 1 - p.x  // front camera is mirrored horizontally
+        let newPose = classifyPose(hand: hand, wrist: wrist)
+        if newPose != currentPose {
+            currentPose = newPose
+            // Pose changed: restart positional tracking so the cursor doesn't jump.
+            smoothed = nil
+            lastSent = nil
+            lastPalmX = nil
+            palmTravel = 0
+            palmStillSince = CACurrentMediaTime()
+            DispatchQueue.main.async { self.pose = newPose }
+        }
 
-        // Exponential smoothing tames per-frame Vision jitter.
+        switch currentPose {
+        case .pointer:
+            trackPointer(hand: hand, index: index)
+        case .palm:
+            trackPalmGestures(hand: hand)
+        case .scroll:
+            trackScroll(index: index)
+        case .none:
+            break
+        }
+    }
+
+    /// Extended-finger classification: a finger is "up" when its tip is
+    /// meaningfully farther from the wrist than its middle (PIP) joint.
+    private func classifyPose(hand: VNHumanHandPoseObservation, wrist: VNRecognizedPoint) -> HandPose {
+        func extended(_ tip: VNHumanHandPoseObservation.JointName,
+                      _ pip: VNHumanHandPoseObservation.JointName) -> Bool {
+            guard let t = try? hand.recognizedPoint(tip), t.confidence > 0.3,
+                  let p = try? hand.recognizedPoint(pip), p.confidence > 0.3 else { return false }
+            let dt = hypot(t.location.x - wrist.location.x, t.location.y - wrist.location.y)
+            let dp = hypot(p.location.x - wrist.location.x, p.location.y - wrist.location.y)
+            return dt > dp * 1.15
+        }
+        let indexUp = extended(.indexTip, .indexPIP)
+        let middleUp = extended(.middleTip, .middlePIP)
+        let ringUp = extended(.ringTip, .ringPIP)
+        let littleUp = extended(.littleTip, .littlePIP)
+
+        if indexUp && middleUp && ringUp && littleUp { return .palm }
+        if indexUp && middleUp && !ringUp && !littleUp { return .scroll }
+        return .pointer
+    }
+
+    /// Maps a Vision-normalized fingertip position to screen motion.
+    /// Vision reports coordinates in the (landscape, mirrored) camera frame;
+    /// for a portrait phone this maps buffer-y -> screen-x and buffer-x ->
+    /// screen-y, plus the front-camera mirror.
+    private func screenPoint(for location: CGPoint) -> CGPoint {
+        CGPoint(x: 1 - location.y, y: location.x)
+    }
+
+    private func trackPointer(hand: VNHumanHandPoseObservation, index: VNRecognizedPoint) {
+        var p = screenPoint(for: index.location)
         if let s = smoothed {
             let alpha: CGFloat = 0.4
             p = CGPoint(x: s.x + (p.x - s.x) * alpha, y: s.y + (p.y - s.y) * alpha)
@@ -109,8 +176,6 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
         smoothed = p
 
         if let last = lastSent {
-            // Normalized delta -> pixels. ~1600 px across the full camera view
-            // at default sensitivity.
             let dx = Double(p.x - last.x) * 1600.0 * sensitivity
             let dy = Double(p.y - last.y) * 1600.0 * sensitivity
             if abs(dx) >= 0.5 || abs(dy) >= 0.5 {
@@ -121,8 +186,7 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
             lastSent = p
         }
 
-        // Pinch: thumb tip close to index tip presses the button; hysteresis
-        // (0.05 to close, 0.09 to open) prevents flutter at the boundary.
+        // Pinch with hysteresis (close at 0.05, open at 0.09) to avoid flutter.
         if let thumb = try? hand.recognizedPoint(.thumbTip), thumb.confidence > 0.35 {
             let d = hypot(index.location.x - thumb.location.x,
                           index.location.y - thumb.location.y)
@@ -144,18 +208,73 @@ final class HandTrackingController: NSObject, ObservableObject, AVCaptureVideoDa
         }
     }
 
-    private func handLost() {
-        lostFrames += 1
-        // Small grace period so one bad frame doesn't drop the hand.
-        guard lostFrames == 5 else { return }
-        smoothed = nil
-        lastSent = nil
+    /// Open palm: lateral swipe switches desktops; holding still opens
+    /// Mission Control. The pointer stays paused the whole time.
+    private func trackPalmGestures(hand: VNHumanHandPoseObservation) {
+        releasePinchIfNeeded()
+        guard let middle = try? hand.recognizedPoint(.middleTip) else { return }
+        let x = screenPoint(for: middle.location).x
+        let now = CACurrentMediaTime()
+
+        if let last = lastPalmX {
+            let delta = x - last
+            // Accumulate consistent lateral travel; reset on direction change.
+            if palmTravel.sign != delta.sign { palmTravel = 0 }
+            palmTravel += delta
+            if abs(delta) > 0.004 { palmStillSince = now }
+
+            if abs(palmTravel) > 0.22 && now - lastGestureTime > 1.0 {
+                lastGestureTime = now
+                let dir = palmTravel > 0 ? "right" : "left"
+                palmTravel = 0
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: dir)
+                DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .heavy).impactOccurred() }
+            } else if now - palmStillSince > 1.0 && now - lastGestureTime > 1.5 {
+                lastGestureTime = now
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "up")   // Mission Control
+                DispatchQueue.main.async { UIImpactFeedbackGenerator(style: .heavy).impactOccurred() }
+            }
+        } else {
+            palmStillSince = now
+        }
+        lastPalmX = x
+    }
+
+    /// Two-finger V: vertical hand motion scrolls.
+    private func trackScroll(index: VNRecognizedPoint) {
+        releasePinchIfNeeded()
+        var p = screenPoint(for: index.location)
+        if let s = smoothed {
+            let alpha: CGFloat = 0.4
+            p = CGPoint(x: s.x + (p.x - s.x) * alpha, y: s.y + (p.y - s.y) * alpha)
+        }
+        smoothed = p
+        if let last = lastSent {
+            let dy = Double(p.y - last.y) * 1400.0 * sensitivity
+            if abs(dy) >= 0.5 {
+                NetworkManager.shared.sendScroll(dx: 0, dy: -dy)
+                lastSent = p
+            }
+        } else {
+            lastSent = p
+        }
+    }
+
+    private func releasePinchIfNeeded() {
         if pinchActive {
             pinchActive = false
             NetworkManager.shared.sendMouseUp(button: "left")
             DispatchQueue.main.async { self.pinching = false }
         }
-        DispatchQueue.main.async { self.handVisible = false }
+    }
+
+    private func handLost() {
+        lostFrames += 1
+        // Small grace period so one bad frame doesn't drop the hand.
+        guard lostFrames == 5 else { return }
+        releasePinchIfNeeded()
+        resetTracking()
+        DispatchQueue.main.async { self.pose = .none }
     }
 }
 
@@ -182,6 +301,16 @@ struct HandMouseView: View {
     @AppStorage("handMouseSensitivity") private var handMouseSensitivity: Double = 1.0
     @StateObject private var controller = HandTrackingController()
 
+    private var borderColor: Color {
+        if controller.pinching { return .orange }
+        switch controller.pose {
+        case .none: return Color.secondary.opacity(0.4)
+        case .pointer: return .green
+        case .palm: return .blue
+        case .scroll: return .purple
+        }
+    }
+
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
@@ -189,10 +318,16 @@ struct HandMouseView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .overlay(
                         RoundedRectangle(cornerRadius: 24)
-                            .strokeBorder(controller.pinching ? Color.orange :
-                                          (controller.handVisible ? Color.green : Color.secondary.opacity(0.4)),
-                                          lineWidth: 3)
+                            .strokeBorder(borderColor, lineWidth: 3)
                     )
+                    .overlay(alignment: .topLeading) {
+                        Label(controller.pinching ? "Pinch — button down" : controller.pose.rawValue,
+                              systemImage: controller.pose == .none ? "hand.raised.slash" : "hand.raised.fill")
+                            .font(.footnote.weight(.semibold))
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(10)
+                    }
 
                 if controller.permissionDenied {
                     VStack(spacing: 8) {
@@ -210,27 +345,20 @@ struct HandMouseView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal)
 
-            HStack(spacing: 16) {
-                Label(controller.handVisible ? "Hand tracked" : "Show your hand",
-                      systemImage: controller.handVisible ? "hand.raised.fill" : "hand.raised.slash")
-                    .foregroundStyle(controller.handVisible ? .green : .secondary)
-                Label(controller.pinching ? "Pinching (button down)" : "Pinch to click",
-                      systemImage: controller.pinching ? "hand.pinch.fill" : "hand.pinch")
-                    .foregroundStyle(controller.pinching ? .orange : .secondary)
-            }
-            .font(.footnote)
-
             HStack {
                 Text("Sensitivity")
                 Slider(value: $handMouseSensitivity, in: 0.25...3.0, step: 0.05)
             }
             .padding(.horizontal)
 
-            Text("Point with your index finger to move the cursor. Pinch thumb and index together for a click; hold the pinch to drag.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Point: move finger to steer • pinch = click, hold pinch = drag", systemImage: "hand.point.up.left")
+                Label("Open palm: swipe left/right = switch desktop • hold still = Mission Control", systemImage: "hand.raised")
+                Label("Two-finger V: move up/down to scroll", systemImage: "hand.point.up.braille")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
         }
         .padding(.vertical)
         .navigationTitle("Hand Mouse")

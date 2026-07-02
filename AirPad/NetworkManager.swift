@@ -50,6 +50,7 @@ final class NetworkManager: ObservableObject {
     // and switch between multiple Macs.
     var currentMacID: String?
     @Published var currentMacName: String?
+    @Published var lastFetchedClipboard: String?
 
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
@@ -521,6 +522,15 @@ final class NetworkManager: ObservableObject {
                     DispatchQueue.main.async { self.currentMacName = macName }
                 }
 
+            case "clipboard_data":
+                // Reply to requestMacClipboard: put the Mac's clipboard on ours.
+                if let payload = obj?["payload"] as? [String: Any], let text = payload["text"] as? String {
+                    DispatchQueue.main.async {
+                        UIPasteboard.general.string = text
+                        self.lastFetchedClipboard = text
+                    }
+                }
+
             case "pair_response":
                 // Store the freshly paired secret under THIS Mac's ID. The server
                 // authorized us on approval, so there's no further handshake.
@@ -810,6 +820,23 @@ final class NetworkManager: ObservableObject {
     // brightness_up/down, lock_screen.
     func sendMedia(action: String) {
         try? send(type: "media", payload: ["action": action])
+    }
+
+    // Types a whole string on the Mac (dictation / paste-through).
+    func sendTypeText(_ text: String) {
+        guard !text.isEmpty else { return }
+        try? send(type: "type_text", payload: ["text": text])
+    }
+
+    // Clipboard sync: push the given text into the Mac's clipboard.
+    func sendClipboardSet(_ text: String) {
+        try? send(type: "clipboard_set", payload: ["text": text])
+    }
+
+    // Clipboard sync: ask the Mac for its clipboard; reply arrives as
+    // "clipboard_data" and is placed on the iOS pasteboard.
+    func requestMacClipboard() {
+        try? send(type: "clipboard_get", payload: [:])
     }
 
     func sendKeyDown(keyCode: UInt16) {

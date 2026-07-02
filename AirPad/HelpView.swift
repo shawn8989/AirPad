@@ -2,42 +2,83 @@ import SwiftUI
 
 struct HelpView: View {
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Welcome to AirPad")
-                    .font(.largeTitle.bold())
-
-                Group {
-                    Text("Getting Started").font(.title2.bold())
-                    Text("1. Install and run the AirBridge agent on your Mac.\n2. Ensure your iPhone/iPad and Mac are on the same local network.\n3. Open AirPad and select your Mac from the list.")
-                }
-
-                Group {
-                    Text("Pairing & Trust").font(.title2.bold())
-                    Text("On first connect, AirPad performs Trust On First Use (TOFU). It stores the server's certificate fingerprint and a shared secret to authenticate future sessions. This helps prevent tampering and adds message integrity with HMAC.")
-                    Text("If you reinstall the Mac agent or move to a new Mac, the fingerprint may change. Use Reset Trust (Forget Server) to clear the saved fingerprint and shared secret, then reconnect to pair again.")
-                }
-
-                Group {
-                    Text("Controls").font(.title2.bold())
-                    Text("• Trackpad: One-finger drag to move the pointer. Two-finger pan to scroll. Double-tap to lock/unlock drag. Two-finger tap for right click.\n• Keyboard: Send keys, modifiers, and special keys.\n• Live Screen: View the Mac screen with adjustable quality and resolution.")
-                }
-
-                Group {
-                    Text("Privacy & Security").font(.title2.bold())
-                    Text("AirPad communicates only on your local network. TLS encrypts traffic, and HMAC integrity protects messages. You can reset trust anytime in Settings or on the connection screen.")
-                }
-
-                Group {
-                    Text("Troubleshooting").font(.title2.bold())
-                    Text("• Can't find your Mac? Ensure Wi‑Fi is on and both devices are on the same network.\n• Connection blocked? Allow local network access when prompted.\n• Pairing or trust errors? Use Reset Trust and reconnect.\n• Performance issues? Lower Live Screen quality or max width in the Options menu.")
-                }
-
-                Spacer(minLength: 12)
+        List {
+            Section("Getting Started") {
+                helpRow("1. Run AirBridge on your Mac (menu bar).")
+                helpRow("2. Put both devices on the same Wi-Fi network.")
+                helpRow("3. Pick your Mac in AirPad and approve the pairing dialog on the Mac — once per device.")
+                helpRow("Switch Macs anytime from the picker in the top-left of the control screen.")
             }
-            .padding()
+
+            Section("Trackpad") {
+                gestureRow("hand.point.up.left", "1 finger", "Move the cursor. Tap = click. Double-tap = lock/unlock drag.")
+                gestureRow("hand.draw", "2 fingers", "Scroll. Fast horizontal flick = browser back/forward. 2-finger tap = right click.")
+                gestureRow("arrow.up.left.and.arrow.down.right", "Pinch", "Zoom in/out (Cmd +/− on the Mac).")
+                gestureRow("hand.raised.fingers.spread", "3–4 finger swipe", "Left/right = switch desktop. Up = Mission Control. Down = current app's windows. Fires when you lift your fingers.")
+                gestureRow("circle.dotted", "Touch indicators", "Blue dots show each detected finger (toggle in Settings).")
+            }
+
+            Section("Air Mouse (motion)") {
+                gestureRow("dot.circle.and.hand.point.up.left.fill", "Aim pad", "Hold and move the phone like a Wii remote to steer the cursor; release to freeze it.")
+                gestureRow("arrow.up.and.down.circle", "Scroll pad", "Hold the green pad and tilt the phone to scroll.")
+                gestureRow("arrow.left.arrow.right", "Wrist flick", "With no pad held, snap your wrist left/right to switch desktops (toggle on the Air Mouse screen).")
+                gestureRow("hand.draw.fill", "Drag button", "Holds the mouse button so you can move windows while aiming.")
+            }
+
+            Section("Hand Mouse (camera)") {
+                gestureRow("hand.point.up.left", "Point", "Index finger steers the cursor. Pinch thumb+index = click; hold the pinch = drag.")
+                gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control.")
+                gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
+                helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The border color shows the detected pose. Video is processed on-device and never transmitted.")
+            }
+
+            Section("Media & System") {
+                helpRow("Volume, play/pause/skip, and display brightness use the Mac's real media keys (you'll see the on-screen HUD).")
+                helpRow("Presentation: previous/next slide and blank-screen for Keynote, PowerPoint, and Google Slides.")
+                helpRow("Clipboard: send your iPhone clipboard to the Mac (paste with ⌘V), type it directly, or fetch the Mac's clipboard to your phone.")
+                helpRow("Lock Mac Screen asks for confirmation first.")
+            }
+
+            Section("Dictation") {
+                helpRow("Click where you want the text on the Mac, then dictate on the phone, review the transcript, and tap Type on Mac.")
+            }
+
+            Section("Keyboard, Apps & Live Screen") {
+                helpRow("Keyboard: type text, use modifier keys (⌘⌥⌃⇧) and special keys.")
+                helpRow("Apps: launch or focus Mac apps and switch desktops/windows.")
+                helpRow("Live Screen: watch the Mac's screen live with adjustable quality; use pointer mode to control what you see.")
+            }
+
+            Section("Privacy & Security") {
+                helpRow("Traffic stays on your local network, encrypted with TLS. Every device is paired and authenticated per-Mac; the Mac only obeys authenticated devices.")
+                helpRow("Reset trust anytime with Forget Server, then re-pair.")
+            }
+
+            Section("Troubleshooting") {
+                helpRow("Can't find the Mac? Same Wi-Fi network, AirBridge running, and Local Network permission allowed.")
+                helpRow("Desktop switching needs more than one desktop (Mission Control > +).")
+                helpRow("Input not working? Check the Mac's Accessibility permission for AirBridge (System Settings > Privacy & Security > Accessibility).")
+                helpRow("Laggy? Lower Live Screen quality, or reconnect.")
+                helpRow("Pairing errors? Forget Server on the phone, then reconnect and approve again.")
+            }
         }
         .navigationTitle("Help")
+    }
+
+    private func helpRow(_ text: String) -> some View {
+        Text(text).font(.subheadline)
+    }
+
+    private func gestureRow(_ icon: String, _ title: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .frame(width: 28)
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(text).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

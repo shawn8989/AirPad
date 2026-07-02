@@ -44,5 +44,11 @@
          Frames are processed on-device only and never leave the phone. -->
     <key>NSCameraUsageDescription</key>
     <string>AirPad uses the front camera to track your hand so you can point and pinch to control your Mac. Video is processed on this device and never transmitted.</string>
+
+    <!-- Dictation: speak on the phone, text is typed on the Mac. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>AirPad uses the microphone for dictation so the text you speak can be typed on your Mac.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>AirPad converts your speech to text so it can be typed on your Mac.</string>
 </dict>
 </plist>

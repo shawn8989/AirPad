@@ -205,6 +205,16 @@ struct MainControlView: View {
                 .buttonStyle(.bordered)
                 .labelStyle(.titleAndIcon)
 
+                NavigationLink(destination: DictationView()) {
+                    Label("Dictate", systemImage: "mic.fill")
+                        .frame(maxWidth: .infinity)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .allowsTightening(true)
+                }
+                .buttonStyle(.bordered)
+                .labelStyle(.titleAndIcon)
+
                 NavigationLink(destination: SettingsView()) {
                     Label("Settings", systemImage: "gearshape")
                         .frame(maxWidth: .infinity)
