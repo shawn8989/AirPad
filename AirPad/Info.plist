@@ -39,5 +39,10 @@
     <!-- Optional: improves indirect input behavior with trackpads/keyboards -->
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
+
+    <!-- Hand Mouse: the front camera tracks your hand to control the Mac cursor.
+         Frames are processed on-device only and never leave the phone. -->
+    <key>NSCameraUsageDescription</key>
+    <string>AirPad uses the front camera to track your hand so you can point and pinch to control your Mac. Video is processed on this device and never transmitted.</string>
 </dict>
 </plist>

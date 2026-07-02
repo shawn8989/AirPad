@@ -806,6 +806,12 @@ final class NetworkManager: ObservableObject {
         try? send(type: "pinch", payload: ["direction": zoomIn ? "in" : "out"])
     }
 
+    // Media/system control: volume_up/down, mute, play_pause, next, previous,
+    // brightness_up/down, lock_screen.
+    func sendMedia(action: String) {
+        try? send(type: "media", payload: ["action": action])
+    }
+
     func sendKeyDown(keyCode: UInt16) {
         try? send(type: "key_down", payload: ["keyCode": Int(keyCode)])
     }

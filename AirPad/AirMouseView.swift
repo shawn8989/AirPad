@@ -6,10 +6,16 @@ import CoreMotion
 /// maps to pointer velocity through the existing coalesced mouse pipeline,
 /// so latency and backpressure behavior match the trackpad.
 final class AirMouseController: ObservableObject {
+    enum Mode { case idle, pointer, scroll }
+
     private let motion = CMMotionManager()
-    @Published var isAiming = false
+    @Published var mode: Mode = .idle
     @Published var motionAvailable = true
     var sensitivity: Double = 1.0
+    var flickEnabled = true
+    var hapticsEnabled = true
+
+    private var lastFlickTime: TimeInterval = 0
 
     func start() {
         guard motion.isDeviceMotionAvailable else {
@@ -19,8 +25,23 @@ final class AirMouseController: ObservableObject {
         guard !motion.isDeviceMotionActive else { return }
         motion.deviceMotionUpdateInterval = 1.0 / 60.0
         motion.startDeviceMotionUpdates(to: .main) { [weak self] dm, _ in
-            guard let self, let dm, self.isAiming else { return }
+            guard let self, let dm else { return }
             let rate = dm.rotationRate
+
+            // Flick: a sharp twist while NOT holding a pad switches desktops,
+            // so it can never fight with pointer aiming.
+            if self.mode == .idle {
+                guard self.flickEnabled else { return }
+                let now = dm.timestamp
+                if abs(rate.z) > 4.5 && now - self.lastFlickTime > 0.8 {
+                    self.lastFlickTime = now
+                    // Clockwise snap (negative z) = flick right = next Space.
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: rate.z < 0 ? "right" : "left")
+                    if self.hapticsEnabled { UIImpactFeedbackGenerator(style: .heavy).impactOccurred() }
+                }
+                return
+            }
+
             // Deadzone swallows sensor noise and hand tremor at rest.
             let dead = 0.02
             let rz = abs(rate.z) > dead ? rate.z : 0   // yaw: twist left/right
@@ -29,38 +50,55 @@ final class AirMouseController: ObservableObject {
             // rad/s -> px per update. ~1000 px per radian at default
             // sensitivity feels close to a Wii pointer.
             let gain = 1000.0 * self.sensitivity / 60.0
-            NetworkManager.shared.sendMouseDelta(dx: -rz * gain, dy: -rx * gain)
+            switch self.mode {
+            case .pointer:
+                NetworkManager.shared.sendMouseDelta(dx: -rz * gain, dy: -rx * gain)
+            case .scroll:
+                // Tilt to scroll; horizontal twist scrolls sideways.
+                NetworkManager.shared.sendScroll(dx: -rz * gain * 0.6, dy: rx * gain * 0.6)
+            case .idle:
+                break
+            }
         }
     }
 
     func stop() {
         motion.stopDeviceMotionUpdates()
-        isAiming = false
+        mode = .idle
     }
 }
 
 struct AirMouseView: View {
     @AppStorage("airMouseSensitivity") private var airMouseSensitivity: Double = 1.0
+    @AppStorage("airFlickEnabled") private var airFlickEnabled: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
 
     @StateObject private var controller = AirMouseController()
     @State private var dragLocked = false
 
+    private var statusText: String {
+        switch controller.mode {
+        case .pointer: return "Aiming — move your phone"
+        case .scroll: return "Scrolling — tilt your phone"
+        case .idle: return airFlickEnabled ? "Hold a pad to aim • snap wrist to switch desktops" : "Hold a pad to aim"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 16) {
-            Text(controller.isAiming ? "Aiming — move your phone" : "Hold the pad to aim")
+            Text(statusText)
                 .font(.headline)
-                .foregroundStyle(controller.isAiming ? .primary : .secondary)
+                .foregroundStyle(controller.mode == .idle ? .secondary : .primary)
 
             // Aim pad: press and hold to steer, release to freeze the cursor
             // (like lifting a mouse off the desk).
             RoundedRectangle(cornerRadius: 24)
-                .fill(controller.isAiming ? Color.accentColor.opacity(0.35) : Color(.secondarySystemBackground))
+                .fill(controller.mode == .pointer ? Color.accentColor.opacity(0.35) : Color(.secondarySystemBackground))
                 .overlay(
                     VStack(spacing: 10) {
-                        Image(systemName: controller.isAiming ? "dot.circle.and.hand.point.up.left.fill" : "hand.point.up.left")
+                        Image(systemName: controller.mode == .pointer ? "dot.circle.and.hand.point.up.left.fill" : "hand.point.up.left")
                             .font(.system(size: 56))
-                        Text(controller.isAiming ? "Steering the cursor" : "Hold to aim")
+                        Text(controller.mode == .pointer ? "Steering the cursor" : "Hold to aim")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -70,12 +108,35 @@ struct AirMouseView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { _ in
-                            if !controller.isAiming {
-                                controller.isAiming = true
+                            if controller.mode != .pointer {
+                                controller.mode = .pointer
                                 if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                             }
                         }
-                        .onEnded { _ in controller.isAiming = false }
+                        .onEnded { _ in controller.mode = .idle }
+                )
+                .padding(.horizontal)
+
+            // Scroll pad: hold and tilt to scroll instead of pointing.
+            RoundedRectangle(cornerRadius: 18)
+                .fill(controller.mode == .scroll ? Color.green.opacity(0.35) : Color(.secondarySystemBackground))
+                .overlay(
+                    Label(controller.mode == .scroll ? "Scrolling" : "Hold to scroll",
+                          systemImage: "arrow.up.and.down.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                )
+                .frame(height: 64)
+                .contentShape(RoundedRectangle(cornerRadius: 18))
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if controller.mode != .scroll {
+                                controller.mode = .scroll
+                                if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+                            }
+                        }
+                        .onEnded { _ in controller.mode = .idle }
                 )
                 .padding(.horizontal)
 
@@ -88,6 +149,12 @@ struct AirMouseView: View {
             HStack {
                 Text("Sensitivity")
                 Slider(value: $airMouseSensitivity, in: 0.25...3.0, step: 0.05)
+            }
+            .padding(.horizontal)
+
+            Toggle(isOn: $airFlickEnabled) {
+                Label("Wrist flick switches desktops", systemImage: "arrow.left.arrow.right")
+                    .font(.subheadline)
             }
             .padding(.horizontal)
 
@@ -131,6 +198,8 @@ struct AirMouseView: View {
         .navigationTitle("Air Mouse")
         .onAppear {
             controller.sensitivity = airMouseSensitivity
+            controller.flickEnabled = airFlickEnabled
+            controller.hapticsEnabled = hapticsEnabled
             controller.start()
         }
         .onDisappear {
@@ -142,6 +211,9 @@ struct AirMouseView: View {
         }
         .onChange(of: airMouseSensitivity) { _, newValue in
             controller.sensitivity = newValue
+        }
+        .onChange(of: airFlickEnabled) { _, newValue in
+            controller.flickEnabled = newValue
         }
     }
 }

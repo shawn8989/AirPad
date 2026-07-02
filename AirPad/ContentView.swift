@@ -185,6 +185,26 @@ struct MainControlView: View {
                 .buttonStyle(.bordered)
                 .labelStyle(.titleAndIcon)
 
+                NavigationLink(destination: HandMouseView()) {
+                    Label("Hand Mouse", systemImage: "hand.point.up.left.and.text.fill")
+                        .frame(maxWidth: .infinity)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .allowsTightening(true)
+                }
+                .buttonStyle(.bordered)
+                .labelStyle(.titleAndIcon)
+
+                NavigationLink(destination: MediaControlsView()) {
+                    Label("Media", systemImage: "playpause.fill")
+                        .frame(maxWidth: .infinity)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .allowsTightening(true)
+                }
+                .buttonStyle(.bordered)
+                .labelStyle(.titleAndIcon)
+
                 NavigationLink(destination: SettingsView()) {
                     Label("Settings", systemImage: "gearshape")
                         .frame(maxWidth: .infinity)
