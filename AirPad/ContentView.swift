@@ -19,6 +19,26 @@ struct ContentView: View {
                 if network.isConnected {
                     MainControlView(showKeyboard: $showKeyboard)
                         .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Menu {
+                                    if network.discoveredServices.isEmpty {
+                                        Text("Searching for Macs…")
+                                    }
+                                    ForEach(network.discoveredServices, id: \.id) { service in
+                                        Button {
+                                            network.connect(to: service)
+                                        } label: {
+                                            if service.name == network.currentMacName {
+                                                Label("\(service.name) (current)", systemImage: "checkmark")
+                                            } else {
+                                                Text(service.name)
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Label(network.currentMacName ?? "Mac", systemImage: "desktopcomputer")
+                                }
+                            }
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button("Disconnect") { network.disconnect() }
                             }
@@ -27,7 +47,7 @@ struct ContentView: View {
                     ConnectionView()
                 }
             }
-            .navigationTitle("AirPad")
+            .navigationTitle(network.isConnected ? (network.currentMacName ?? "AirPad") : "AirPad")
         }
         .sheet(isPresented: $showKeyboard) {
             KeyboardView()
@@ -204,6 +224,7 @@ struct SettingsView: View {
     @AppStorage("pointerSensitivity") private var pointerSensitivity: Double = 1.0
     @AppStorage("naturalScroll") private var naturalScroll: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
+    @AppStorage("showTouches") private var showTouches: Bool = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
     var body: some View {
@@ -219,6 +240,12 @@ struct SettingsView: View {
             }
             Section("Haptics") {
                 Toggle("Haptic Feedback", isOn: $hapticsEnabled)
+            }
+            Section("Trackpad") {
+                Toggle("Show Touch Indicators", isOn: $showTouches)
+                Text("Draws a dot under each finger and shows how many fingers are detected — useful for checking that 3- and 4-finger gestures register.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             Section("Mode") {
                 Picker("Control Mode", selection: .constant(0)) {

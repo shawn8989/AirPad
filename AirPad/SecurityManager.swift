@@ -86,6 +86,56 @@ final class SecurityManager {
         return true
     }
 
+    // MARK: - Per-Mac shared secrets (one iPhone <-> many Macs)
+    private func macAccount(_ macID: String) -> String { "mac_secret.\(macID)" }
+
+    func storeSharedSecret(_ secret: Data, forMac macID: String) throws {
+        _ = try? deleteSharedSecret(forMac: macID)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: macAccount(macID),
+            kSecValueData as String: secret,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Keychain add failed: \(status)"])
+        }
+    }
+
+    func getSharedSecret(forMac macID: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: macAccount(macID),
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Keychain read failed: \(status)"])
+        }
+        return data
+    }
+
+    @discardableResult
+    func deleteSharedSecret(forMac macID: String) throws -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: macAccount(macID)
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        if status == errSecItemNotFound { return false }
+        guard status == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Keychain delete failed: \(status)"])
+        }
+        return true
+    }
+
     // MARK: - Server certificate pinning
     func storeServerCertFingerprint(_ fingerprint: Data) throws {
         // Remove existing

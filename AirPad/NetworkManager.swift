@@ -33,9 +33,10 @@ final class NetworkManager: ObservableObject {
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "AirPad.Network")
 
-    // Outgoing packet throttling for mouse moves
+    // Outgoing input coalescing with backpressure (mouse + scroll). All access on `queue`.
     private var pendingMouseDelta: (dx: Double, dy: Double) = (0, 0)
-    private var mouseMoveTimer: DispatchSourceTimer?
+    private var pendingScrollDelta: (dx: Double, dy: Double) = (0, 0)
+    private var inputInFlight = false
     private var receiveBuffer = Data()
 
     @Published var discoveredServices: [DiscoveredService] = []
@@ -43,6 +44,12 @@ final class NetworkManager: ObservableObject {
     @Published var isPairing: Bool = false
     @Published var connectingServiceID: UUID?
     @Published var lastErrorMessage: String?
+
+    // Which Mac we're currently talking to (learned from the server's server_info
+    // message). Per-Mac keys are stored under this ID so one AirPad can pair with
+    // and switch between multiple Macs.
+    var currentMacID: String?
+    @Published var currentMacName: String?
 
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
@@ -236,6 +243,12 @@ final class NetworkManager: ObservableObject {
     // MARK: - Connect
     func connect(to service: DiscoveredService) {
         log("Connecting to service: \(service.name)")
+        // Tear down any existing connection so the user can switch Macs on the fly.
+        connection?.cancel()
+        connection = nil
+        currentMacID = nil
+        DispatchQueue.main.async { self.currentMacName = nil }
+
         lastService = service
         reconnectBackoff = 1.0
         reconnectTimer?.cancel()
@@ -274,6 +287,10 @@ final class NetworkManager: ObservableObject {
                 }
                 self.inboundLastCounter = 0
                 self.inboundLastTimestamp = 0
+                // Reset input-coalescing state for the fresh connection.
+                self.inputInFlight = false
+                self.pendingMouseDelta = (0, 0)
+                self.pendingScrollDelta = (0, 0)
                 self.reconnectBackoff = 1.0
                 self.reconnectTimer?.cancel()
                 self.reconnectTimer = nil
@@ -402,28 +419,10 @@ final class NetworkManager: ObservableObject {
             guard let self = self else { return }
             do {
                 let deviceID = try self.security.getOrCreateDeviceID()
-                // If no shared secret, start pairing
-                if (try? self.security.getSharedSecret()) == nil {
-                    DispatchQueue.main.async { self.isPairing = true }
-                    let pairingRequest = [
-                        "deviceID": deviceID,
-                        "timestamp": ISO8601DateFormatter().string(from: Date()),
-                        "type": "pair_request",
-                        "payload": [:] as [String: Any]
-                    ]
-                    try self.sendRawJSON(pairingRequest)
-                } else {
-                    // Derive per-session key and send hello with session salt for server-side derivation
-                    var salt = Data(count: 16)
-                    _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
-                    self.sessionSalt = salt
-                    if let secret = try? self.security.getSharedSecret() {
-                        self.sessionKey = self.deriveSessionKey(sharedSecret: secret, salt: salt)
-                        self.messageCounter = 0
-                    }
-                    let saltB64 = salt.base64EncodedString()
-                    try self.send(type: "hello", payload: ["deviceID": deviceID, "session_salt": saltB64])
-                }
+                // Identify ourselves. The server replies with server_info (its
+                // macID), then either an auth_challenge (already paired with this
+                // Mac) or, after user approval, a pair_response.
+                try self.send(type: "hello", payload: ["deviceID": deviceID])
             } catch {
                 DispatchQueue.main.async { self.lastErrorMessage = "Handshake error: \(error)" }
             }
@@ -513,41 +512,49 @@ final class NetworkManager: ObservableObject {
             }
             self.log("RX type: \(type)")
             switch type {
+            case "server_info":
+                // The Mac told us its stable ID + name. Remember it so we use the
+                // right per-Mac key (and can show which Mac we're controlling).
+                if let payload = obj?["payload"] as? [String: Any], let macID = payload["macID"] as? String {
+                    self.currentMacID = macID
+                    let macName = payload["macName"] as? String
+                    DispatchQueue.main.async { self.currentMacName = macName }
+                }
+
             case "pair_response":
-                if let secretB64 = obj?["shared_secret"] as? String, let secret = Data(base64Encoded: secretB64) {
-                    try? security.storeSharedSecret(secret)
+                // Store the freshly paired secret under THIS Mac's ID. The server
+                // authorized us on approval, so there's no further handshake.
+                if let secretB64 = obj?["shared_secret"] as? String,
+                   let secret = Data(base64Encoded: secretB64),
+                   let macID = self.currentMacID {
+                    try? security.storeSharedSecret(secret, forMac: macID)
                     DispatchQueue.main.async { self.isPairing = false }
-                    // Send hello after pairing, deriving per-session key
-                    let deviceID = self.security.currentDeviceID ?? ""
-                    var salt = Data(count: 16)
-                    _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
-                    self.sessionSalt = salt
-                    if let s = try? self.security.getSharedSecret() {
-                        self.sessionKey = self.deriveSessionKey(sharedSecret: s, salt: salt)
-                        self.messageCounter = 0
-                    }
-                    try? self.send(type: "hello", payload: ["deviceID": deviceID, "session_salt": salt.base64EncodedString()])
                 }
 
             case "auth_challenge":
-                // The server sent a random nonce; prove we hold the shared secret
+                // The server sent a random nonce; prove we hold THIS Mac's secret
                 // by returning HMAC(secret, nonce). Until this passes, the server
                 // will not execute any of our commands.
                 if let payload = obj?["payload"] as? [String: Any],
                    let nonceB64 = payload["nonce"] as? String,
                    let nonce = Data(base64Encoded: nonceB64),
-                   let secret = (try? self.security.getSharedSecret()) ?? nil {
+                   let macID = self.currentMacID,
+                   let secret = (try? self.security.getSharedSecret(forMac: macID)) ?? nil {
                     let proof = self.security.hmacSHA256(data: nonce, key: secret)
                     try? self.send(type: "auth_proof", payload: ["proof": proof.base64EncodedString()])
                 } else {
-                    self.log("auth_challenge: no shared secret available to answer challenge")
+                    // Server thinks we're known but we have no key for this Mac
+                    // (e.g. an install that predates per-Mac keys). Re-pair.
+                    self.log("auth_challenge: no per-Mac secret; requesting re-pair")
+                    DispatchQueue.main.async { self.isPairing = true }
+                    try? self.send(type: "pair_request", payload: [:])
                 }
 
             case "auth_reset":
                 // Server could not verify our secret (typically a stale pairing).
-                // Clear it so the automatic reconnect performs a fresh pairing.
-                self.log("Server requested re-pair; clearing local shared secret")
-                try? self.security.deleteSharedSecret()
+                // Clear THIS Mac's key so the automatic reconnect re-pairs.
+                self.log("Server requested re-pair; clearing per-Mac secret")
+                if let macID = self.currentMacID { try? self.security.deleteSharedSecret(forMac: macID) }
                 DispatchQueue.main.async { self.isPairing = true }
 
             case "installed_apps":
@@ -705,34 +712,67 @@ final class NetworkManager: ObservableObject {
 
     // Public high-level events
     func sendMouseDelta(dx: Double, dy: Double) {
-        // Accumulate and throttle at ~120 Hz
-        pendingMouseDelta.dx += dx
-        pendingMouseDelta.dy += dy
-        if mouseMoveTimer == nil {
-            let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .milliseconds(2))
-            timer.setEventHandler { [weak self] in
-                guard let self = self else { return }
-                let delta = self.pendingMouseDelta
-                // Quantize to integer pixel steps and preserve fractional remainder.
-                let stepX = Int(delta.dx.rounded())
-                let stepY = Int(delta.dy.rounded())
-                if stepX != 0 || stepY != 0 {
-                    // Subtract the sent integer steps to keep fractional remainder for the next tick.
-                    self.pendingMouseDelta.dx -= Double(stepX)
-                    self.pendingMouseDelta.dy -= Double(stepY)
-                    try? self.send(type: "mouse_move", payload: ["dx": stepX, "dy": stepY])
-                    DispatchQueue.main.async { self.debugMouseMoveCount += 1 }
-                }
-            }
-            timer.resume()
-            mouseMoveTimer = timer
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.pendingMouseDelta.dx += dx
+            self.pendingMouseDelta.dy += dy
+            self.pumpInput()
         }
     }
 
     func sendScroll(dx: Double, dy: Double) {
-        try? send(type: "scroll", payload: ["dx": dx, "dy": dy])
-        DispatchQueue.main.async { self.debugScrollCount += 1 }
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.pendingScrollDelta.dx += dx
+            self.pendingScrollDelta.dy += dy
+            self.pumpInput()
+            DispatchQueue.main.async { self.debugScrollCount += 1 }
+        }
+    }
+
+    // Coalesce high-rate mouse/scroll input with backpressure: only one such
+    // packet is in flight at a time; deltas accumulated meanwhile are merged and
+    // sent on completion (latest-wins). This stops the send queue from backing up
+    // over time — the slowdown that previously needed a reconnect to clear.
+    // Must be called on `queue`.
+    private func pumpInput() {
+        guard !inputInFlight else { return }
+        // Mouse first: quantize to integer pixels, keep the fractional remainder.
+        let stepX = Int(pendingMouseDelta.dx.rounded())
+        let stepY = Int(pendingMouseDelta.dy.rounded())
+        if stepX != 0 || stepY != 0 {
+            pendingMouseDelta.dx -= Double(stepX)
+            pendingMouseDelta.dy -= Double(stepY)
+            sendCoalesced(type: "mouse_move", payload: ["dx": stepX, "dy": stepY])
+            DispatchQueue.main.async { self.debugMouseMoveCount += 1 }
+            return
+        }
+        // Then scroll.
+        if pendingScrollDelta.dx != 0 || pendingScrollDelta.dy != 0 {
+            let dx = pendingScrollDelta.dx, dy = pendingScrollDelta.dy
+            pendingScrollDelta = (0, 0)
+            sendCoalesced(type: "scroll", payload: ["dx": dx, "dy": dy])
+            return
+        }
+    }
+
+    // Send one coalesced packet and re-pump when it completes. Must be on `queue`.
+    private func sendCoalesced(type: String, payload: [String: Any]) {
+        guard let conn = connection else { inputInFlight = false; return }
+        do {
+            let packet = buildPacket(type: type, payload: payload)
+            var line = try JSONSerialization.data(withJSONObject: packet, options: [])
+            line.append(0x0A)
+            inputInFlight = true
+            conn.send(content: line, completion: .contentProcessed { [weak self] _ in
+                guard let self = self else { return }
+                // NWConnection completions run on the connection's queue (== self.queue).
+                self.inputInFlight = false
+                self.pumpInput()
+            })
+        } catch {
+            inputInFlight = false
+        }
     }
 
     func sendClick(button: String = "left") {
@@ -754,6 +794,16 @@ final class NetworkManager: ObservableObject {
 
     func sendSwipe(fingers: Int, direction: String) {
         try? send(type: "swipe", payload: ["fingers": fingers, "direction": direction])
+    }
+
+    // Two-finger horizontal flick -> browser back/forward. direction: "back"|"forward".
+    func sendNav(direction: String) {
+        try? send(type: "nav", payload: ["direction": direction])
+    }
+
+    // Pinch -> zoom. zoomIn = true for pinch-out (zoom in), false for pinch-in.
+    func sendPinch(zoomIn: Bool) {
+        try? send(type: "pinch", payload: ["direction": zoomIn ? "in" : "out"])
     }
 
     func sendKeyDown(keyCode: UInt16) {
