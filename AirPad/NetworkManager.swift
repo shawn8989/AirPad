@@ -36,7 +36,11 @@ final class NetworkManager: ObservableObject {
     // Outgoing input coalescing with backpressure (mouse + scroll). All access on `queue`.
     private var pendingMouseDelta: (dx: Double, dy: Double) = (0, 0)
     private var pendingScrollDelta: (dx: Double, dy: Double) = (0, 0)
-    private var inputInFlight = false
+    // Small in-flight window (2) instead of strict stop-and-wait: with one
+    // packet in flight the send rate is gated on TLS-stack completions, which
+    // gets choppy under Wi-Fi jitter. Two keeps the pipe busy while still
+    // bounding queue buildup (the original slowdown bug).
+    private var inputInFlight = 0
     // Owned by `queue`; flushed to the @Published debug counters in batches.
     private var localMoveCount = 0
     private var localScrollCount = 0
@@ -296,7 +300,7 @@ final class NetworkManager: ObservableObject {
                 self.inboundLastCounter = 0
                 self.inboundLastTimestamp = 0
                 // Reset input-coalescing state for the fresh connection.
-                self.inputInFlight = false
+                self.inputInFlight = 0
                 self.pendingMouseDelta = (0, 0)
                 self.pendingScrollDelta = (0, 0)
                 self.reconnectBackoff = 1.0
@@ -760,7 +764,7 @@ final class NetworkManager: ObservableObject {
     // over time — the slowdown that previously needed a reconnect to clear.
     // Must be called on `queue`.
     private func pumpInput() {
-        guard !inputInFlight else { return }
+        guard inputInFlight < 2 else { return }
         // Mouse first: quantize to integer pixels, keep the fractional remainder.
         let stepX = Int(pendingMouseDelta.dx.rounded())
         let stepY = Int(pendingMouseDelta.dy.rounded())
@@ -788,20 +792,20 @@ final class NetworkManager: ObservableObject {
 
     // Send one coalesced packet and re-pump when it completes. Must be on `queue`.
     private func sendCoalesced(type: String, payload: [String: Any]) {
-        guard let conn = connection else { inputInFlight = false; return }
+        guard let conn = connection else { inputInFlight = 0; return }
         do {
             let packet = buildPacket(type: type, payload: payload)
             var line = try JSONSerialization.data(withJSONObject: packet, options: [])
             line.append(0x0A)
-            inputInFlight = true
+            inputInFlight += 1
             conn.send(content: line, completion: .contentProcessed { [weak self] _ in
                 guard let self = self else { return }
                 // NWConnection completions run on the connection's queue (== self.queue).
-                self.inputInFlight = false
+                self.inputInFlight = max(0, self.inputInFlight - 1)
                 self.pumpInput()
             })
         } catch {
-            inputInFlight = false
+            inputInFlight = max(0, inputInFlight - 1)
         }
     }
 
