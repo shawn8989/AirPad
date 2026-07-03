@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import StoreKit
 
 // Root app view that navigates between Connection, Trackpad, and Keyboard screens.
 struct ContentView: View {
@@ -14,6 +15,9 @@ struct ContentView: View {
     @ObservedObject private var proStore = ProStore.shared
     @State private var showKeyboard = false
     @State private var showMultiMacPaywall = false
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("connectSessionCount") private var connectSessionCount = 0
+    @AppStorage("didAskForReview") private var didAskForReview = false
 
     var body: some View {
         NavigationStack {
@@ -61,6 +65,15 @@ struct ContentView: View {
                 NavigationStack { PaywallView() }
             }
         }
+        .onChange(of: network.isConnected) { _, connected in
+            // One tasteful review ask after the 5th successful session — never nag.
+            guard connected else { return }
+            connectSessionCount += 1
+            if connectSessionCount >= 5 && !didAskForReview {
+                didAskForReview = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { requestReview() }
+            }
+        }
         .sheet(isPresented: $showKeyboard) {
             KeyboardView()
                 .presentationDetents([.medium, .large])
@@ -71,34 +84,74 @@ struct ContentView: View {
 // Connection screen that lists discovered AirBridge services and allows selection.
 struct ConnectionView: View {
     @ObservedObject private var network = NetworkManager.shared
+    @State private var searchPulse = false
 
     var body: some View {
         VStack(spacing: 16) {
             if network.isPairing {
-                ProgressView("Pairing with Mac…")
+                VStack(spacing: 8) {
+                    ProgressView("Pairing with Mac…")
+                    Text("Approve the request on your Mac's screen.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
             }
 
-            List(network.discoveredServices, id: \.id) { service in
-                Button(action: { network.connect(to: service) }) {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(service.name)
-                                .font(.headline)
-                            Text("\(service.host ?? "Resolving…") : \(service.port ?? 0)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+            List {
+                Section {
+                    ForEach(network.discoveredServices, id: \.id) { service in
+                        Button(action: { network.connect(to: service) }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "desktopcomputer")
+                                    .font(.title3)
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading) {
+                                    Text(service.name)
+                                        .font(.headline)
+                                    Text("Tap to connect")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if network.connectingServiceID == service.id {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
                         }
-                        Spacer()
-                        if network.connectingServiceID == service.id {
-                            ProgressView()
-                        }
+                        .disabled(network.isPairing)
+                    }
+                } header: {
+                    if !network.discoveredServices.isEmpty {
+                        Text("Your Macs")
+                    }
+                } footer: {
+                    if let error = network.lastErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(network.isPairing)
             }
             .overlay(alignment: .center) {
                 if network.discoveredServices.isEmpty {
-                    ContentUnavailableView("Searching for Macs", systemImage: "bonjour", description: Text("Looking for _airbridge._tcp services on your network."))
+                    VStack(spacing: 14) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 44))
+                            .foregroundStyle(Color.accentColor)
+                            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: true)
+                        Text("Searching for Macs…")
+                            .font(.headline)
+                        Text("Open AirBridge on your Mac and make sure both devices are on the same Wi-Fi network.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
                 }
             }
 
@@ -111,27 +164,23 @@ struct ConnectionView: View {
 
                 Spacer()
 
-                if let error = network.lastErrorMessage {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-                    Text(error).font(.footnote).foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
                 NavigationLink(destination: HelpView()) {
                     Label("Help", systemImage: "questionmark.circle")
                 }
 
+                #if DEBUG
                 NavigationLink(destination: DebugLogView()) {
                     Label("Debug", systemImage: "ladybug.fill")
                 }
+                #endif
 
                 Button(role: .destructive) {
                     NetworkManager.shared.resetTrust()
                 } label: {
-                    Label("Forget Server", systemImage: "trash")
+                    Label("Forget", systemImage: "trash")
                 }
             }
+            .lineLimit(1)
             .padding(.horizontal)
         }
         .onAppear { network.startBrowsing() }
@@ -259,18 +308,36 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Section("Mode") {
-                Picker("Control Mode", selection: .constant(0)) {
-                    Text("Trackpad").tag(0)
-                    Text("Air Mouse").tag(1)
+            Section("AirPad Pro") {
+                if ProStore.shared.purchased {
+                    Label("Pro unlocked — thank you!", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(Color.accentColor)
+                } else {
+                    NavigationLink(destination: PaywallView()) {
+                        Label("Unlock AirPad Pro", systemImage: "wand.and.stars")
+                    }
+                    Button {
+                        Task { await ProStore.shared.restore() }
+                    } label: {
+                        Label("Restore Purchase", systemImage: "arrow.clockwise.circle")
+                    }
                 }
-                .pickerStyle(.segmented)
-                Text("More modes coming soon: Drawing Tablet, Media Remote, etc.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
             Section("About") {
-                Text("AirPad enhances your Mac with a customizable trackpad and keyboard controller.")
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    if let url = URL(string: "itms-apps://itunes.apple.com/app/id0000000000?action=write-review") {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Label("Rate AirPad", systemImage: "star")
+                }
+                Text("AirPad turns your iPhone into a trackpad, keyboard, motion pointer, and camera-gesture controller for your Mac. Everything runs on your local network — nothing is collected or sent anywhere else.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

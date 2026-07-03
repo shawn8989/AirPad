@@ -307,6 +307,7 @@ final class NetworkManager: ObservableObject {
                 self.reconnectTimer?.cancel()
                 self.reconnectTimer = nil
                 self.postConnectHandshake()
+                self.startHeartbeat()
                 self.receiveLoop()
             case .failed(let error):
                 self.log("Connection failed: \(error)")
@@ -315,6 +316,7 @@ final class NetworkManager: ObservableObject {
                     self.isConnected = false
                     self.connectingServiceID = nil
                 }
+                self.stopHeartbeat()
                 self.connection?.cancel()
                 self.connection = nil
                 if self.lastService != nil { self.scheduleReconnect() }
@@ -323,6 +325,7 @@ final class NetworkManager: ObservableObject {
                 DispatchQueue.main.async { self.lastErrorMessage = "Waiting: \(self.friendlyError(error))" }
             case .cancelled:
                 self.log("Connection cancelled")
+                self.stopHeartbeat()
                 DispatchQueue.main.async { self.isConnected = false }
                 if self.lastService != nil { self.scheduleReconnect() }
             default:
@@ -333,7 +336,39 @@ final class NetworkManager: ObservableObject {
         connection.start(queue: queue)
     }
 
+    // MARK: - Heartbeat
+    // Detects half-dead connections (Mac asleep, Wi-Fi drop) that TCP won't
+    // surface for minutes: ping every 15s; if no pong within ~35s, cancel the
+    // connection so auto-reconnect takes over instead of hanging.
+    private var heartbeatTimer: DispatchSourceTimer?
+    private var lastPongAt: TimeInterval = 0
+
+    private func startHeartbeat() {
+        stopHeartbeat()
+        lastPongAt = CACurrentMediaTime()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 15, repeating: 15)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            if CACurrentMediaTime() - self.lastPongAt > 35 {
+                self.log("Heartbeat timeout — dropping connection to trigger reconnect")
+                DispatchQueue.main.async { self.lastErrorMessage = "Connection to the Mac was lost." }
+                self.connection?.cancel()
+                return
+            }
+            try? self.send(type: "ping", payload: [:])
+        }
+        timer.resume()
+        heartbeatTimer = timer
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTimer?.cancel()
+        heartbeatTimer = nil
+    }
+
     func disconnect() {
+        stopHeartbeat()
         connection?.cancel()
         connection = nil
         lastService = nil // user-initiated disconnect disables auto-reconnect
@@ -534,6 +569,9 @@ final class NetworkManager: ObservableObject {
                     let macName = payload["macName"] as? String
                     DispatchQueue.main.async { self.currentMacName = macName }
                 }
+
+            case "pong":
+                self.lastPongAt = CACurrentMediaTime()
 
             case "clipboard_data":
                 // Reply to requestMacClipboard: put the Mac's clipboard on ours.
