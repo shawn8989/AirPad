@@ -105,11 +105,16 @@ same as every app in this category.
 - [ ] Put the release URL in: the App Store description, the app's onboarding,
       and your landing page.
 
-**Landing page copy stub** (host anywhere — GitHub Pages is free):
-> **AirPad** — control your Mac from your iPhone.
-> 1. Download **AirBridge** for your Mac → [Download .dmg]
-> 2. Get **AirPad** on the App Store → [App Store badge]
-> 3. Open both on the same Wi-Fi and approve the pairing. Done.
+**Landing page + privacy policy (already built):** the AirBridge repo contains a
+complete static site at `docs/index.html` and `docs/privacy.html`.
+- [ ] Enable it: GitHub → shawn8989/AirBridge-mac → Settings → Pages →
+      Source: "Deploy from a branch" → Branch `main`, folder `/docs` → Save.
+- [ ] Your URLs become:
+      `https://shawn8989.github.io/AirBridge-mac/` (marketing URL) and
+      `https://shawn8989.github.io/AirBridge-mac/privacy.html` (privacy policy URL) —
+      paste both into App Store Connect (App Information).
+- [ ] After the App Store approval, replace the "#appstore" placeholder link in
+      `docs/index.html` with the real App Store URL.
 
 ## 5. Launch checklist
 
