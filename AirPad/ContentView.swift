@@ -11,7 +11,9 @@ import UIKit
 // Root app view that navigates between Connection, Trackpad, and Keyboard screens.
 struct ContentView: View {
     @ObservedObject private var network = NetworkManager.shared
+    @ObservedObject private var proStore = ProStore.shared
     @State private var showKeyboard = false
+    @State private var showMultiMacPaywall = false
 
     var body: some View {
         NavigationStack {
@@ -26,7 +28,14 @@ struct ContentView: View {
                                     }
                                     ForEach(network.discoveredServices, id: \.id) { service in
                                         Button {
-                                            network.connect(to: service)
+                                            // Switching to a DIFFERENT Mac is a Pro feature;
+                                            // the first/current Mac is always free.
+                                            let isSwitch = service.name != network.currentMacName
+                                            if isSwitch && !proStore.isPro {
+                                                showMultiMacPaywall = true
+                                            } else {
+                                                network.connect(to: service)
+                                            }
                                         } label: {
                                             if service.name == network.currentMacName {
                                                 Label("\(service.name) (current)", systemImage: "checkmark")
@@ -48,6 +57,9 @@ struct ContentView: View {
                 }
             }
             .navigationTitle(network.isConnected ? (network.currentMacName ?? "AirPad") : "AirPad")
+            .sheet(isPresented: $showMultiMacPaywall) {
+                NavigationStack { PaywallView() }
+            }
         }
         .sheet(isPresented: $showKeyboard) {
             KeyboardView()
@@ -130,16 +142,20 @@ struct ConnectionView: View {
 // of modes/tools. Everything fits on screen — no horizontal overflow.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
+    @ObservedObject private var proStore = ProStore.shared
 
     private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
 
     var body: some View {
         VStack(spacing: 12) {
+            TrialBanner()
+                .padding(.top, 4)
+
             TrackpadView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding([.horizontal, .top])
+                .padding(.horizontal)
 
             // Quick actions
             HStack(spacing: 10) {
@@ -170,14 +186,14 @@ struct MainControlView: View {
             .lineLimit(1)
             .padding(.horizontal)
 
-            // Modes & tools
+            // Modes & tools. Pro tiles route to the paywall once the trial ends.
             LazyVGrid(columns: gridColumns, spacing: 10) {
-                modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill") { AirMouseView() }
-                modeTile("Hand Mouse", "hand.point.up.left") { HandMouseView() }
-                modeTile("Live Screen", "display") { LiveScreenView() }
-                modeTile("Media", "playpause.fill") { MediaControlsView() }
-                modeTile("Dictate", "mic.fill") { DictationView() }
-                modeTile("Apps", "square.grid.2x2") { AppShortcutsView() }
+                modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
+                modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
+                modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
+                modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
+                modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
+                modeTile("Apps", "square.grid.2x2", pro: true) { AppShortcutsView() }
                 modeTile("Settings", "gearshape") { SettingsView() }
                 modeTile("Help", "questionmark.circle") { HelpView() }
             }
@@ -185,8 +201,10 @@ struct MainControlView: View {
         }
     }
 
-    private func modeTile<D: View>(_ title: String, _ icon: String, @ViewBuilder destination: () -> D) -> some View {
-        NavigationLink(destination: destination()) {
+    private func modeTile<D: View>(_ title: String, _ icon: String, pro: Bool = false,
+                                   @ViewBuilder destination: () -> D) -> some View {
+        let locked = pro && !proStore.isPro
+        return NavigationLink(destination: locked ? AnyView(PaywallView()) : AnyView(destination())) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.title3)
@@ -198,6 +216,16 @@ struct MainControlView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(alignment: .topTrailing) {
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(Color.accentColor, in: Circle())
+                        .offset(x: -4, y: 4)
+                }
+            }
         }
         .buttonStyle(.plain)
         .foregroundStyle(Color.accentColor)
