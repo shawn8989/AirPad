@@ -92,6 +92,7 @@ struct ContentView: View {
 struct ConnectionView: View {
     @ObservedObject private var network = NetworkManager.shared
     @State private var searchPulse = false
+    @State private var showQRScanner = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -164,6 +165,13 @@ struct ConnectionView: View {
 
             HStack {
                 Button {
+                    showQRScanner = true
+                } label: {
+                    Label("Scan QR", systemImage: "qrcode.viewfinder")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
                     network.startBrowsing()
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
@@ -190,6 +198,7 @@ struct ConnectionView: View {
             .lineLimit(1)
             .padding(.horizontal)
         }
+        .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
         .onAppear { network.startBrowsing() }
     }
 }

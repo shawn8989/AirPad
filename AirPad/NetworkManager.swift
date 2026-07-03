@@ -336,6 +336,45 @@ final class NetworkManager: ObservableObject {
         connection.start(queue: queue)
     }
 
+    // MARK: - QR pairing (client)
+
+    /// Set after scanning a pairing QR; consumed by the next hello handshake.
+    private var pendingQRPairing: (macID: String, macName: String, secret: Data)?
+
+    /// Parses a scanned QR payload; on success stores the pending secret and
+    /// connects to the matching Mac. Returns a user-facing error, or nil.
+    func handleScannedQR(_ string: String) -> String? {
+        guard let data = string.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (obj["v"] as? Int) == 1,
+              let macID = obj["macID"] as? String,
+              let macName = obj["macName"] as? String,
+              let secretB64 = obj["qrSecret"] as? String,
+              let secret = Data(base64Encoded: secretB64) else {
+            return "That doesn't look like an AirBridge pairing code."
+        }
+        guard let service = discoveredServices.first(where: { $0.name == macName }) else {
+            return "Found the code for “\(macName)”, but that Mac isn't visible on this network. Make sure AirBridge is running and both devices share the same Wi-Fi."
+        }
+        queue.async { [weak self] in
+            self?.pendingQRPairing = (macID, macName, secret)
+        }
+        connect(to: service)
+        return nil
+    }
+
+    /// Same derivation as AirBridge: HKDF-SHA256(qrSecret, salt: deviceID,
+    /// info: "AirPad-QR-Pair", 32 bytes).
+    private func deriveQRPairSecret(qrSecret: Data, deviceID: String) -> Data {
+        let key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: qrSecret),
+                                         salt: Data(deviceID.utf8),
+                                         info: Data("AirPad-QR-Pair".utf8),
+                                         outputByteCount: 32)
+        var out = Data()
+        key.withUnsafeBytes { out.append(contentsOf: $0) }
+        return out
+    }
+
     // MARK: - Heartbeat
     // Detects half-dead connections (Mac asleep, Wi-Fi drop) that TCP won't
     // surface for minutes: ping every 15s; if no pong within ~35s, cancel the
@@ -469,7 +508,14 @@ final class NetworkManager: ObservableObject {
                 // Identify ourselves. The server replies with server_info (its
                 // macID), then either an auth_challenge (already paired with this
                 // Mac) or, after user approval, a pair_response.
-                try self.send(type: "hello", payload: ["deviceID": deviceID])
+                var payload: [String: Any] = ["deviceID": deviceID]
+                // QR pairing: prove we scanned the code shown on the Mac's
+                // screen — the server pairs us instantly, no approval dialog.
+                if let qr = self.pendingQRPairing {
+                    let proof = self.security.hmacSHA256(data: Data(deviceID.utf8), key: qr.secret)
+                    payload["qrProof"] = proof.base64EncodedString()
+                }
+                try self.send(type: "hello", payload: payload)
             } catch {
                 DispatchQueue.main.async { self.lastErrorMessage = "Handshake error: \(error)" }
             }
@@ -572,6 +618,19 @@ final class NetworkManager: ObservableObject {
 
             case "pong":
                 self.lastPongAt = CACurrentMediaTime()
+
+            case "pair_qr_ok":
+                // The Mac accepted our QR proof: store the derived per-Mac
+                // secret (matches what the server stored) and we're done —
+                // the connection is already authenticated server-side.
+                if let qr = self.pendingQRPairing,
+                   let deviceID = try? self.security.getOrCreateDeviceID() {
+                    let derived = self.deriveQRPairSecret(qrSecret: qr.secret, deviceID: deviceID)
+                    try? self.security.storeSharedSecret(derived, forMac: qr.macID)
+                    self.pendingQRPairing = nil
+                    self.log("QR pairing complete with \(qr.macName)")
+                    DispatchQueue.main.async { self.isPairing = false }
+                }
 
             case "clipboard_data":
                 // Reply to requestMacClipboard: put the Mac's clipboard on ours.
