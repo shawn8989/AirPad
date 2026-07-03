@@ -71,34 +71,50 @@ final class AirMouseController: ObservableObject {
 struct AirMouseView: View {
     @AppStorage("airMouseSensitivity") private var airMouseSensitivity: Double = 1.0
     @AppStorage("airFlickEnabled") private var airFlickEnabled: Bool = true
+    @AppStorage("airMouseHoldToAim") private var holdToAim: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
 
     @StateObject private var controller = AirMouseController()
     @State private var dragLocked = false
+    @State private var aimLatched = false
+    @State private var padPressStart: Date?
 
     private var statusText: String {
         switch controller.mode {
-        case .pointer: return "Aiming — move your phone"
+        case .pointer:
+            return holdToAim ? "Aiming — move your phone" : "Aiming locked — tap to click, long-press to stop"
         case .scroll: return "Scrolling — tilt your phone"
-        case .idle: return airFlickEnabled ? "Hold a pad to aim • snap wrist to switch desktops" : "Hold a pad to aim"
+        case .idle:
+            let aim = holdToAim ? "Hold the pad to aim (quick tap = click)" : "Tap the pad to start aiming"
+            return airFlickEnabled ? "\(aim) • snap wrist to switch desktops" : aim
         }
+    }
+
+    private var aimPadSubtitle: String {
+        if controller.mode == .pointer {
+            return holdToAim ? "Steering — quick tap = click" : "Tap = click • long-press = stop"
+        }
+        return holdToAim ? "Hold to aim" : "Tap to start aiming"
     }
 
     var body: some View {
         VStack(spacing: 16) {
             Text(statusText)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(controller.mode == .idle ? .secondary : .primary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
 
-            // Aim pad: press and hold to steer, release to freeze the cursor
-            // (like lifting a mouse off the desk).
+            // Aim pad. Hold mode: press to steer, release to freeze; a quick tap
+            // clicks. Toggle mode: tap latches aiming on; while latched, quick
+            // taps click and a long-press stops aiming.
             RoundedRectangle(cornerRadius: 24)
                 .fill(controller.mode == .pointer ? Color.accentColor.opacity(0.35) : Color(.secondarySystemBackground))
                 .overlay(
                     VStack(spacing: 10) {
                         Image(systemName: controller.mode == .pointer ? "dot.circle.and.hand.point.up.left.fill" : "hand.point.up.left")
                             .font(.system(size: 56))
-                        Text(controller.mode == .pointer ? "Steering the cursor" : "Hold to aim")
+                        Text(aimPadSubtitle)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -108,12 +124,41 @@ struct AirMouseView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { _ in
-                            if controller.mode != .pointer {
+                            if padPressStart == nil { padPressStart = Date() }
+                            if holdToAim && controller.mode != .pointer {
                                 controller.mode = .pointer
                                 if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                             }
                         }
-                        .onEnded { _ in controller.mode = .idle }
+                        .onEnded { value in
+                            let duration = padPressStart.map { Date().timeIntervalSince($0) } ?? 1
+                            padPressStart = nil
+                            let travel = hypot(value.translation.width, value.translation.height)
+                            let isTap = duration < 0.25 && travel < 10
+
+                            if holdToAim {
+                                controller.mode = .idle
+                                if isTap {
+                                    NetworkManager.shared.sendClick(button: "left")
+                                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                                }
+                            } else {
+                                if !aimLatched {
+                                    // Any release latches aiming on.
+                                    aimLatched = true
+                                    controller.mode = .pointer
+                                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+                                } else if isTap {
+                                    NetworkManager.shared.sendClick(button: "left")
+                                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                                } else {
+                                    // Long-press (or drag) unlatches.
+                                    aimLatched = false
+                                    controller.mode = .idle
+                                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .rigid).impactOccurred() }
+                                }
+                            }
+                        }
                 )
                 .padding(.horizontal)
 
@@ -136,7 +181,8 @@ struct AirMouseView: View {
                                 if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                             }
                         }
-                        .onEnded { _ in controller.mode = .idle }
+                        // Return to latched aiming (toggle mode) rather than idle.
+                        .onEnded { _ in controller.mode = aimLatched ? .pointer : .idle }
                 )
                 .padding(.horizontal)
 
@@ -144,6 +190,17 @@ struct AirMouseView: View {
                 Label("Motion sensors unavailable on this device", systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.orange)
+            }
+
+            Picker("Aim mode", selection: $holdToAim) {
+                Text("Hold to Aim").tag(true)
+                Text("Tap to Toggle").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .onChange(of: holdToAim) { _, _ in
+                aimLatched = false
+                controller.mode = .idle
             }
 
             HStack {
@@ -207,6 +264,7 @@ struct AirMouseView: View {
                 NetworkManager.shared.sendMouseUp(button: "left")
                 dragLocked = false
             }
+            aimLatched = false
             controller.stop()
         }
         .onChange(of: airMouseSensitivity) { _, newValue in
