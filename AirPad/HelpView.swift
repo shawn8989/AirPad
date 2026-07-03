@@ -29,6 +29,7 @@ struct HelpView: View {
                 gestureRow("hand.point.up.left", "Move", "A relaxed hand steers the cursor (it tracks your knuckles, so clicking won't nudge it). Pinch thumb+index = click; hold the pinch = drag.")
                 gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control.")
                 gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
+                gestureRow("wand.and.stars", "Gesture Studio", "Record your OWN hand poses (tap the wand on the Hand Mouse screen) and map them to shortcuts, media keys, desktops, or typed text.")
                 helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The border color shows the detected pose. Video is processed on-device and never transmitted.")
             }
 

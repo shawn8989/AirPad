@@ -41,6 +41,7 @@ enum HandEvent {
     case fistDragEnded
     case thumbsUpHold        // play/pause
     case shakaHold           // next desktop
+    case custom(UUID)        // user-recorded template matched (Gesture Studio)
 }
 
 struct HandGestureConfig {
@@ -51,6 +52,8 @@ struct HandGestureConfig {
     var fistDragEnabled = true
     var thumbsUpEnabled = true
     var shakaEnabled = true
+    /// Enabled user-recorded pose templates (Gesture Studio), by id.
+    var customTemplates: [UUID: [Double]] = [:]
 }
 
 final class HandGestureRecognizer {
@@ -84,6 +87,11 @@ final class HandGestureRecognizer {
     private var holdFired = false
     private var dragActive = false
 
+    // Custom template matching (Gesture Studio)
+    private var customMatchID: UUID?
+    private var customMatchFrames = 0
+    private var lastCustomFire: TimeInterval = 0
+
     // MARK: - Input
 
     func process(_ hand: VNHumanHandPoseObservation?) {
@@ -99,6 +107,11 @@ final class HandGestureRecognizer {
         lostFrames = 0
         let scale = distance(wrist, midMCP)
         guard scale > 0.02 else { return }
+
+        // Custom templates (Gesture Studio) take precedence over built-in
+        // gestures: while a recorded pose matches strongly, suppress everything
+        // else so the two systems can't fight.
+        if matchCustomTemplates(hand) { return }
 
         let observed = classify(hand, wrist: wrist, scale: scale)
         debounce(observed)
@@ -317,6 +330,46 @@ final class HandGestureRecognizer {
             dragActive = false
             onEvent?(.fistDragEnded)
         }
+    }
+
+    /// Returns true when a user template matches (built-ins are suppressed).
+    private func matchCustomTemplates(_ hand: VNHumanHandPoseObservation) -> Bool {
+        guard !config.customTemplates.isEmpty,
+              let features = HandPoseFeatures.vector(from: hand) else {
+            customMatchID = nil
+            customMatchFrames = 0
+            return false
+        }
+        var bestID: UUID?
+        var bestScore = 0.0
+        for (id, template) in config.customTemplates {
+            let score = HandPoseFeatures.cosineSimilarity(template, features)
+            if score > bestScore {
+                bestScore = score
+                bestID = id
+            }
+        }
+        guard bestScore >= 0.93, let id = bestID else {
+            customMatchID = nil
+            customMatchFrames = 0
+            return false
+        }
+        if id == customMatchID {
+            customMatchFrames += 1
+        } else {
+            customMatchID = id
+            customMatchFrames = 1
+        }
+        let now = CACurrentMediaTime()
+        if customMatchFrames >= 4 && now - lastCustomFire > 1.0 {
+            lastCustomFire = now
+            customMatchFrames = 0
+            releasePinch()
+            endDragIfNeeded()
+            cursor.reset()
+            onEvent?(.custom(id))
+        }
+        return true
     }
 
     private func handLost() {

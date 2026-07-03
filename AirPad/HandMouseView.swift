@@ -84,6 +84,12 @@ final class HandMouseAdapter: ObservableObject {
         case .shakaHold:
             NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")  // next desktop
             heavyHaptic()
+        case .custom(let id):
+            // User-recorded gesture (Gesture Studio): execute its mapped action.
+            if let gesture = GestureStore.shared.gesture(id: id) {
+                gesture.action.execute()
+                heavyHaptic()
+            }
         }
     }
 
@@ -153,12 +159,19 @@ struct HandMouseView: View {
                             .padding(10)
                     }
                     .overlay(alignment: .topTrailing) {
-                        Button {
-                            showGestureSheet = true
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
-                                .padding(8)
-                                .background(.ultraThinMaterial, in: Circle())
+                        HStack(spacing: 8) {
+                            NavigationLink(destination: GestureStudioView()) {
+                                Image(systemName: "wand.and.stars")
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
+                            Button {
+                                showGestureSheet = true
+                            } label: {
+                                Image(systemName: "slider.horizontal.3")
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
                         }
                         .padding(10)
                     }
@@ -248,6 +261,7 @@ struct HandMouseView: View {
         c.fistDragEnabled = fistDragEnabled
         c.thumbsUpEnabled = thumbsUpEnabled
         c.shakaEnabled = shakaEnabled
+        c.customTemplates = GestureStore.shared.enabledTemplates
         adapter.config = c
     }
 }
