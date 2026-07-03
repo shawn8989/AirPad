@@ -66,6 +66,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: network.isConnected) { _, connected in
+            // A trackpad is useless if the phone sleeps mid-use: keep the
+            // screen awake while connected, restore normal auto-lock after.
+            UIApplication.shared.isIdleTimerDisabled = connected
+
             // One tasteful review ask after the 5th successful session — never nag.
             guard connected else { return }
             connectSessionCount += 1
@@ -73,6 +77,9 @@ struct ContentView: View {
                 didAskForReview = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) { requestReview() }
             }
+        }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = network.isConnected
         }
         .sheet(isPresented: $showKeyboard) {
             KeyboardView()
@@ -389,6 +396,20 @@ struct SettingsView: View {
                     Label("Show Onboarding", systemImage: "sparkles")
                 }
             }
+            #if DEBUG
+            Section("Developer") {
+                Toggle("Simulate Free (test paywall)", isOn: Binding(
+                    get: { UserDefaults.standard.bool(forKey: "debug.simulateFree") },
+                    set: {
+                        UserDefaults.standard.set($0, forKey: "debug.simulateFree")
+                        ProStore.shared.objectWillChange.send()  // refresh lock badges
+                    }
+                ))
+                Text("DEBUG builds are always Pro unless this is on. Release builds use the real trial + purchase.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            #endif
         }
         .navigationTitle("Settings")
     }

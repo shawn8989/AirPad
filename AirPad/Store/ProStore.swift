@@ -30,7 +30,15 @@ final class ProStore: ObservableObject {
 
     // MARK: - Entitlement
 
-    var isPro: Bool { purchased || inTrial }
+    var isPro: Bool {
+        #if DEBUG
+        // Developer builds are always Pro so your own devices never lock after
+        // the trial. Flip "Simulate Free" in Settings (DEBUG section) to test
+        // the paywall and lock badges.
+        if !UserDefaults.standard.bool(forKey: "debug.simulateFree") { return true }
+        #endif
+        return purchased || inTrial
+    }
     var inTrial: Bool { Date() < trialEnd }
     var trialEnd: Date { trialStart.addingTimeInterval(TimeInterval(Self.trialDays) * 86_400) }
     var trialDaysLeft: Int { max(0, Int(ceil(trialEnd.timeIntervalSinceNow / 86_400))) }

@@ -1,0 +1,38 @@
+{
+  "identifier" : "5B2F1C3A-0000-4000-8000-A1RP4DPR0001",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "7.99",
+      "familyShareable" : true,
+      "internalID" : "A1RP4DPR0",
+      "localizations" : [
+        {
+          "description" : "Air Mouse, Hand Mouse, media & presentation remote, dictation, live screen, apps, and multi-Mac switching.",
+          "displayName" : "AirPad Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.airpad.pro.lifetime",
+      "referenceName" : "AirPad Pro (Lifetime)",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
