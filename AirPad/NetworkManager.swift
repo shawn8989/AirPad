@@ -508,7 +508,8 @@ final class NetworkManager: ObservableObject {
                 // Identify ourselves. The server replies with server_info (its
                 // macID), then either an auth_challenge (already paired with this
                 // Mac) or, after user approval, a pair_response.
-                var payload: [String: Any] = ["deviceID": deviceID]
+                var payload: [String: Any] = ["deviceID": deviceID,
+                                              "deviceName": UIDevice.current.name]
                 // QR pairing: prove we scanned the code shown on the Mac's
                 // screen — the server pairs us instantly, no approval dialog.
                 if let qr = self.pendingQRPairing {
