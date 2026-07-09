@@ -102,8 +102,59 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         }
         if !showTouches && !touchPoints.isEmpty {
             touchPoints.removeAll()
-            setNeedsDisplay()
+            updateIndicator()
         }
+    }
+
+    // MARK: - Touch indicator (layer-based)
+    // Dots are GPU-composited CALayers moved by position. The previous
+    // implementation redrew the whole view with CoreGraphics on every touch
+    // event (60-120x/s on the main thread), which visibly lagged the cursor.
+    private var dotLayers: [CALayer] = []
+    private lazy var countLabel: CATextLayer = {
+        let l = CATextLayer()
+        l.fontSize = 20
+        l.font = UIFont.systemFont(ofSize: 20, weight: .semibold)
+        l.foregroundColor = UIColor.systemBlue.cgColor
+        l.alignmentMode = .center
+        l.contentsScale = UIScreen.main.scale
+        l.isHidden = true
+        layer.addSublayer(l)
+        return l
+    }()
+
+    private func updateIndicator() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let points = Array(touchPoints.values)
+        while dotLayers.count < points.count {
+            let dot = CALayer()
+            let radius: CGFloat = 34
+            dot.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
+            dot.cornerRadius = radius
+            dot.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.25).cgColor
+            dot.borderColor = UIColor.systemBlue.withAlphaComponent(0.9).cgColor
+            dot.borderWidth = 3
+            layer.addSublayer(dot)
+            dotLayers.append(dot)
+        }
+        for (i, dot) in dotLayers.enumerated() {
+            if i < points.count {
+                dot.isHidden = false
+                dot.position = points[i]
+            } else {
+                dot.isHidden = true
+            }
+        }
+        if points.isEmpty {
+            countLabel.isHidden = true
+        } else {
+            countLabel.isHidden = false
+            countLabel.string = points.count == 1 ? "1 finger" : "\(points.count) fingers"
+            countLabel.bounds = CGRect(x: 0, y: 0, width: 160, height: 26)
+            countLabel.position = CGPoint(x: bounds.midX, y: max(24, bounds.height - 30))
+        }
+        CATransaction.commit()
     }
 
     // MARK: - Raw touch tracking (indicator + manual multi-finger swipes)
@@ -190,7 +241,7 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
 
         touchPrev = live
         touchPoints = live
-        if showTouches { setNeedsDisplay() }
+        if showTouches { updateIndicator() }
 
         if live.isEmpty && tracking {
             finalizeGesture()
@@ -230,34 +281,6 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         tracking = false
         touchStarts.removeAll()
         touchPrev.removeAll()
-    }
-
-    // MARK: - Drawing the finger indicator
-    override func draw(_ rect: CGRect) {
-        guard showTouches, !touchPoints.isEmpty,
-              let ctx = UIGraphicsGetCurrentContext() else { return }
-        let tint = UIColor.systemBlue
-        let radius: CGFloat = 34
-        for point in touchPoints.values {
-            let dot = CGRect(x: point.x - radius, y: point.y - radius,
-                             width: radius * 2, height: radius * 2)
-            ctx.setFillColor(tint.withAlphaComponent(0.25).cgColor)
-            ctx.fillEllipse(in: dot)
-            ctx.setStrokeColor(tint.withAlphaComponent(0.9).cgColor)
-            ctx.setLineWidth(3)
-            ctx.strokeEllipse(in: dot)
-        }
-        // Finger count badge, centered.
-        let count = touchPoints.count
-        let label = count == 1 ? "1 finger" : "\(count) fingers"
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 22, weight: .semibold),
-            .foregroundColor: UIColor.systemBlue
-        ]
-        let size = (label as NSString).size(withAttributes: attrs)
-        let origin = CGPoint(x: (bounds.width - size.width) / 2,
-                             y: max(12, bounds.height - size.height - 16))
-        (label as NSString).draw(at: origin, withAttributes: attrs)
     }
 
     // MARK: - Handlers

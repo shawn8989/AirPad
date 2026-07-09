@@ -7,11 +7,17 @@
 
 import SwiftUI
 import UIKit
+import StoreKit
 
 // Root app view that navigates between Connection, Trackpad, and Keyboard screens.
 struct ContentView: View {
     @ObservedObject private var network = NetworkManager.shared
+    @ObservedObject private var proStore = ProStore.shared
     @State private var showKeyboard = false
+    @State private var showMultiMacPaywall = false
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("connectSessionCount") private var connectSessionCount = 0
+    @AppStorage("didAskForReview") private var didAskForReview = false
 
     var body: some View {
         NavigationStack {
@@ -26,7 +32,14 @@ struct ContentView: View {
                                     }
                                     ForEach(network.discoveredServices, id: \.id) { service in
                                         Button {
-                                            network.connect(to: service)
+                                            // Switching to a DIFFERENT Mac is a Pro feature;
+                                            // the first/current Mac is always free.
+                                            let isSwitch = service.name != network.currentMacName
+                                            if isSwitch && !proStore.isPro {
+                                                showMultiMacPaywall = true
+                                            } else {
+                                                network.connect(to: service)
+                                            }
                                         } label: {
                                             if service.name == network.currentMacName {
                                                 Label("\(service.name) (current)", systemImage: "checkmark")
@@ -48,6 +61,25 @@ struct ContentView: View {
                 }
             }
             .navigationTitle(network.isConnected ? (network.currentMacName ?? "AirPad") : "AirPad")
+            .sheet(isPresented: $showMultiMacPaywall) {
+                NavigationStack { PaywallView() }
+            }
+        }
+        .onChange(of: network.isConnected) { _, connected in
+            // A trackpad is useless if the phone sleeps mid-use: keep the
+            // screen awake while connected, restore normal auto-lock after.
+            UIApplication.shared.isIdleTimerDisabled = connected
+
+            // One tasteful review ask after the 5th successful session — never nag.
+            guard connected else { return }
+            connectSessionCount += 1
+            if connectSessionCount >= 5 && !didAskForReview {
+                didAskForReview = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { requestReview() }
+            }
+        }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = network.isConnected
         }
         .sheet(isPresented: $showKeyboard) {
             KeyboardView()
@@ -59,38 +91,86 @@ struct ContentView: View {
 // Connection screen that lists discovered AirBridge services and allows selection.
 struct ConnectionView: View {
     @ObservedObject private var network = NetworkManager.shared
+    @State private var searchPulse = false
+    @State private var showQRScanner = false
 
     var body: some View {
         VStack(spacing: 16) {
             if network.isPairing {
-                ProgressView("Pairing with Mac…")
+                VStack(spacing: 8) {
+                    ProgressView("Pairing with Mac…")
+                    Text("Approve the request on your Mac's screen.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
             }
 
-            List(network.discoveredServices, id: \.id) { service in
-                Button(action: { network.connect(to: service) }) {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(service.name)
-                                .font(.headline)
-                            Text("\(service.host ?? "Resolving…") : \(service.port ?? 0)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+            List {
+                Section {
+                    ForEach(network.discoveredServices, id: \.id) { service in
+                        Button(action: { network.connect(to: service) }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "desktopcomputer")
+                                    .font(.title3)
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading) {
+                                    Text(service.name)
+                                        .font(.headline)
+                                    Text("Tap to connect")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if network.connectingServiceID == service.id {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
                         }
-                        Spacer()
-                        if network.connectingServiceID == service.id {
-                            ProgressView()
-                        }
+                        .disabled(network.isPairing)
+                    }
+                } header: {
+                    if !network.discoveredServices.isEmpty {
+                        Text("Your Macs")
+                    }
+                } footer: {
+                    if let error = network.lastErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(network.isPairing)
             }
             .overlay(alignment: .center) {
                 if network.discoveredServices.isEmpty {
-                    ContentUnavailableView("Searching for Macs", systemImage: "bonjour", description: Text("Looking for _airbridge._tcp services on your network."))
+                    VStack(spacing: 14) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 44))
+                            .foregroundStyle(Color.accentColor)
+                            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: true)
+                        Text("Searching for Macs…")
+                            .font(.headline)
+                        Text("Open AirBridge on your Mac and make sure both devices are on the same Wi-Fi network.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
                 }
             }
 
             HStack {
+                Button {
+                    showQRScanner = true
+                } label: {
+                    Label("Scan QR", systemImage: "qrcode.viewfinder")
+                }
+                .buttonStyle(.borderedProminent)
+
                 Button {
                     network.startBrowsing()
                 } label: {
@@ -99,124 +179,121 @@ struct ConnectionView: View {
 
                 Spacer()
 
-                if let error = network.lastErrorMessage {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-                    Text(error).font(.footnote).foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
                 NavigationLink(destination: HelpView()) {
                     Label("Help", systemImage: "questionmark.circle")
                 }
 
+                #if DEBUG
                 NavigationLink(destination: DebugLogView()) {
                     Label("Debug", systemImage: "ladybug.fill")
                 }
+                #endif
 
                 Button(role: .destructive) {
                     NetworkManager.shared.resetTrust()
                 } label: {
-                    Label("Forget Server", systemImage: "trash")
+                    Label("Forget", systemImage: "trash")
                 }
             }
+            .lineLimit(1)
             .padding(.horizontal)
         }
+        .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
         .onAppear { network.startBrowsing() }
     }
 }
 
-// Main control view showing a trackpad and a button to open the keyboard.
+// Main control view: trackpad on top, one row of quick actions, then a grid
+// of modes/tools. Everything fits on screen — no horizontal overflow.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
+    @ObservedObject private var proStore = ProStore.shared
+
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
 
     var body: some View {
         VStack(spacing: 12) {
+            TrialBanner()
+                .padding(.top, 4)
+
             TrackpadView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding()
+                .padding(.horizontal)
 
-            HStack {
-                Button {
-                    showKeyboard = true
-                } label: {
-                    Label("Keyboard", systemImage: "keyboard")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.borderedProminent)
-                .labelStyle(.titleAndIcon)
-
+            // Quick actions
+            HStack(spacing: 10) {
                 Button {
                     NetworkManager.shared.sendClick(button: "left")
                 } label: {
                     Label("Click", systemImage: "cursorarrow.click")
                         .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
                 }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
+                .buttonStyle(.borderedProminent)
 
                 Button {
                     NetworkManager.shared.sendClick(button: "right")
                 } label: {
                     Label("Right Click", systemImage: "cursorarrow.rays")
                         .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
                 }
                 .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-                
-                NavigationLink(destination: AirMouseView()) {
-                    Label("Air Mouse", systemImage: "dot.circle.and.hand.point.up.left.fill")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
 
-                NavigationLink(destination: SettingsView()) {
-                    Label("Settings", systemImage: "gearshape")
+                Button {
+                    showKeyboard = true
+                } label: {
+                    Label("Keyboard", systemImage: "keyboard")
                         .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
                 }
                 .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
+            }
+            .lineLimit(1)
+            .padding(.horizontal)
 
-                NavigationLink(destination: LiveScreenView()) {
-                    Label("Live Screen", systemImage: "display")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
-
-                NavigationLink(destination: AppShortcutsView()) {
-                    Label("Apps", systemImage: "app")
-                        .frame(maxWidth: .infinity)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .allowsTightening(true)
-                }
-                .buttonStyle(.bordered)
-                .labelStyle(.titleAndIcon)
+            // Modes & tools. Pro tiles route to the paywall once the trial ends.
+            LazyVGrid(columns: gridColumns, spacing: 10) {
+                modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
+                modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
+                modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
+                modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
+                modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
+                modeTile("Apps", "square.grid.2x2", pro: true) { AppShortcutsView() }
+                modeTile("Settings", "gearshape") { SettingsView() }
+                modeTile("Help", "questionmark.circle") { HelpView() }
             }
             .padding([.horizontal, .bottom])
         }
+    }
+
+    private func modeTile<D: View>(_ title: String, _ icon: String, pro: Bool = false,
+                                   @ViewBuilder destination: () -> D) -> some View {
+        let locked = pro && !proStore.isPro
+        return NavigationLink(destination: locked ? AnyView(PaywallView()) : AnyView(destination())) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                Text(title)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(alignment: .topTrailing) {
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(Color.accentColor, in: Circle())
+                        .offset(x: -4, y: 4)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
     }
 }
 
@@ -247,18 +324,36 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Section("Mode") {
-                Picker("Control Mode", selection: .constant(0)) {
-                    Text("Trackpad").tag(0)
-                    Text("Air Mouse").tag(1)
+            Section("AirPad Pro") {
+                if ProStore.shared.purchased {
+                    Label("Pro unlocked — thank you!", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(Color.accentColor)
+                } else {
+                    NavigationLink(destination: PaywallView()) {
+                        Label("Unlock AirPad Pro", systemImage: "wand.and.stars")
+                    }
+                    Button {
+                        Task { await ProStore.shared.restore() }
+                    } label: {
+                        Label("Restore Purchase", systemImage: "arrow.clockwise.circle")
+                    }
                 }
-                .pickerStyle(.segmented)
-                Text("More modes coming soon: Drawing Tablet, Media Remote, etc.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
             Section("About") {
-                Text("AirPad enhances your Mac with a customizable trackpad and keyboard controller.")
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    if let url = URL(string: "itms-apps://itunes.apple.com/app/id0000000000?action=write-review") {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Label("Rate AirPad", systemImage: "star")
+                }
+                Text("AirPad turns your iPhone into a trackpad, keyboard, motion pointer, and camera-gesture controller for your Mac. Everything runs on your local network — nothing is collected or sent anywhere else.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -310,6 +405,20 @@ struct SettingsView: View {
                     Label("Show Onboarding", systemImage: "sparkles")
                 }
             }
+            #if DEBUG
+            Section("Developer") {
+                Toggle("Simulate Free (test paywall)", isOn: Binding(
+                    get: { UserDefaults.standard.bool(forKey: "debug.simulateFree") },
+                    set: {
+                        UserDefaults.standard.set($0, forKey: "debug.simulateFree")
+                        ProStore.shared.objectWillChange.send()  // refresh lock badges
+                    }
+                ))
+                Text("DEBUG builds are always Pro unless this is on. Release builds use the real trial + purchase.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            #endif
         }
         .navigationTitle("Settings")
     }

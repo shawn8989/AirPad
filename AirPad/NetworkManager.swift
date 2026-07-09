@@ -36,7 +36,14 @@ final class NetworkManager: ObservableObject {
     // Outgoing input coalescing with backpressure (mouse + scroll). All access on `queue`.
     private var pendingMouseDelta: (dx: Double, dy: Double) = (0, 0)
     private var pendingScrollDelta: (dx: Double, dy: Double) = (0, 0)
-    private var inputInFlight = false
+    // Small in-flight window (2) instead of strict stop-and-wait: with one
+    // packet in flight the send rate is gated on TLS-stack completions, which
+    // gets choppy under Wi-Fi jitter. Two keeps the pipe busy while still
+    // bounding queue buildup (the original slowdown bug).
+    private var inputInFlight = 0
+    // Owned by `queue`; flushed to the @Published debug counters in batches.
+    private var localMoveCount = 0
+    private var localScrollCount = 0
     private var receiveBuffer = Data()
 
     @Published var discoveredServices: [DiscoveredService] = []
@@ -50,6 +57,7 @@ final class NetworkManager: ObservableObject {
     // and switch between multiple Macs.
     var currentMacID: String?
     @Published var currentMacName: String?
+    @Published var lastFetchedClipboard: String?
 
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
@@ -104,8 +112,12 @@ final class NetworkManager: ObservableObject {
         startBrowsing()
     }
 
+    // Shared formatter: allocating an ISO8601DateFormatter per log line is
+    // expensive enough to matter on hot paths.
+    private static let logTimestampFormatter = ISO8601DateFormatter()
+
     private func log(_ message: String) {
-        let ts = ISO8601DateFormatter().string(from: Date())
+        let ts = Self.logTimestampFormatter.string(from: Date())
         let line = "[\(ts)] \(message)"
         DispatchQueue.main.async {
             self.debugLogs.append(line)
@@ -288,13 +300,14 @@ final class NetworkManager: ObservableObject {
                 self.inboundLastCounter = 0
                 self.inboundLastTimestamp = 0
                 // Reset input-coalescing state for the fresh connection.
-                self.inputInFlight = false
+                self.inputInFlight = 0
                 self.pendingMouseDelta = (0, 0)
                 self.pendingScrollDelta = (0, 0)
                 self.reconnectBackoff = 1.0
                 self.reconnectTimer?.cancel()
                 self.reconnectTimer = nil
                 self.postConnectHandshake()
+                self.startHeartbeat()
                 self.receiveLoop()
             case .failed(let error):
                 self.log("Connection failed: \(error)")
@@ -303,6 +316,7 @@ final class NetworkManager: ObservableObject {
                     self.isConnected = false
                     self.connectingServiceID = nil
                 }
+                self.stopHeartbeat()
                 self.connection?.cancel()
                 self.connection = nil
                 if self.lastService != nil { self.scheduleReconnect() }
@@ -311,6 +325,7 @@ final class NetworkManager: ObservableObject {
                 DispatchQueue.main.async { self.lastErrorMessage = "Waiting: \(self.friendlyError(error))" }
             case .cancelled:
                 self.log("Connection cancelled")
+                self.stopHeartbeat()
                 DispatchQueue.main.async { self.isConnected = false }
                 if self.lastService != nil { self.scheduleReconnect() }
             default:
@@ -321,7 +336,78 @@ final class NetworkManager: ObservableObject {
         connection.start(queue: queue)
     }
 
+    // MARK: - QR pairing (client)
+
+    /// Set after scanning a pairing QR; consumed by the next hello handshake.
+    private var pendingQRPairing: (macID: String, macName: String, secret: Data)?
+
+    /// Parses a scanned QR payload; on success stores the pending secret and
+    /// connects to the matching Mac. Returns a user-facing error, or nil.
+    func handleScannedQR(_ string: String) -> String? {
+        guard let data = string.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (obj["v"] as? Int) == 1,
+              let macID = obj["macID"] as? String,
+              let macName = obj["macName"] as? String,
+              let secretB64 = obj["qrSecret"] as? String,
+              let secret = Data(base64Encoded: secretB64) else {
+            return "That doesn't look like an AirBridge pairing code."
+        }
+        guard let service = discoveredServices.first(where: { $0.name == macName }) else {
+            return "Found the code for “\(macName)”, but that Mac isn't visible on this network. Make sure AirBridge is running and both devices share the same Wi-Fi."
+        }
+        queue.async { [weak self] in
+            self?.pendingQRPairing = (macID, macName, secret)
+        }
+        connect(to: service)
+        return nil
+    }
+
+    /// Same derivation as AirBridge: HKDF-SHA256(qrSecret, salt: deviceID,
+    /// info: "AirPad-QR-Pair", 32 bytes).
+    private func deriveQRPairSecret(qrSecret: Data, deviceID: String) -> Data {
+        let key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: qrSecret),
+                                         salt: Data(deviceID.utf8),
+                                         info: Data("AirPad-QR-Pair".utf8),
+                                         outputByteCount: 32)
+        var out = Data()
+        key.withUnsafeBytes { out.append(contentsOf: $0) }
+        return out
+    }
+
+    // MARK: - Heartbeat
+    // Detects half-dead connections (Mac asleep, Wi-Fi drop) that TCP won't
+    // surface for minutes: ping every 15s; if no pong within ~35s, cancel the
+    // connection so auto-reconnect takes over instead of hanging.
+    private var heartbeatTimer: DispatchSourceTimer?
+    private var lastPongAt: TimeInterval = 0
+
+    private func startHeartbeat() {
+        stopHeartbeat()
+        lastPongAt = CACurrentMediaTime()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 15, repeating: 15)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            if CACurrentMediaTime() - self.lastPongAt > 35 {
+                self.log("Heartbeat timeout — dropping connection to trigger reconnect")
+                DispatchQueue.main.async { self.lastErrorMessage = "Connection to the Mac was lost." }
+                self.connection?.cancel()
+                return
+            }
+            try? self.send(type: "ping", payload: [:])
+        }
+        timer.resume()
+        heartbeatTimer = timer
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTimer?.cancel()
+        heartbeatTimer = nil
+    }
+
     func disconnect() {
+        stopHeartbeat()
         connection?.cancel()
         connection = nil
         lastService = nil // user-initiated disconnect disables auto-reconnect
@@ -422,7 +508,15 @@ final class NetworkManager: ObservableObject {
                 // Identify ourselves. The server replies with server_info (its
                 // macID), then either an auth_challenge (already paired with this
                 // Mac) or, after user approval, a pair_response.
-                try self.send(type: "hello", payload: ["deviceID": deviceID])
+                var payload: [String: Any] = ["deviceID": deviceID,
+                                              "deviceName": UIDevice.current.name]
+                // QR pairing: prove we scanned the code shown on the Mac's
+                // screen — the server pairs us instantly, no approval dialog.
+                if let qr = self.pendingQRPairing {
+                    let proof = self.security.hmacSHA256(data: Data(deviceID.utf8), key: qr.secret)
+                    payload["qrProof"] = proof.base64EncodedString()
+                }
+                try self.send(type: "hello", payload: payload)
             } catch {
                 DispatchQueue.main.async { self.lastErrorMessage = "Handshake error: \(error)" }
             }
@@ -510,7 +604,9 @@ final class NetworkManager: ObservableObject {
                     if requireInboundHMAC { return }
                 }
             }
-            self.log("RX type: \(type)")
+            // Live-screen frames arrive up to ~30x/s; logging each one hops to
+            // the main thread and invalidates SwiftUI, adding input latency.
+            if type != "video_jpeg" { self.log("RX type: \(type)") }
             switch type {
             case "server_info":
                 // The Mac told us its stable ID + name. Remember it so we use the
@@ -519,6 +615,31 @@ final class NetworkManager: ObservableObject {
                     self.currentMacID = macID
                     let macName = payload["macName"] as? String
                     DispatchQueue.main.async { self.currentMacName = macName }
+                }
+
+            case "pong":
+                self.lastPongAt = CACurrentMediaTime()
+
+            case "pair_qr_ok":
+                // The Mac accepted our QR proof: store the derived per-Mac
+                // secret (matches what the server stored) and we're done —
+                // the connection is already authenticated server-side.
+                if let qr = self.pendingQRPairing,
+                   let deviceID = try? self.security.getOrCreateDeviceID() {
+                    let derived = self.deriveQRPairSecret(qrSecret: qr.secret, deviceID: deviceID)
+                    try? self.security.storeSharedSecret(derived, forMac: qr.macID)
+                    self.pendingQRPairing = nil
+                    self.log("QR pairing complete with \(qr.macName)")
+                    DispatchQueue.main.async { self.isPairing = false }
+                }
+
+            case "clipboard_data":
+                // Reply to requestMacClipboard: put the Mac's clipboard on ours.
+                if let payload = obj?["payload"] as? [String: Any], let text = payload["text"] as? String {
+                    DispatchQueue.main.async {
+                        UIPasteboard.general.string = text
+                        self.lastFetchedClipboard = text
+                    }
                 }
 
             case "pair_response":
@@ -726,7 +847,12 @@ final class NetworkManager: ObservableObject {
             self.pendingScrollDelta.dx += dx
             self.pendingScrollDelta.dy += dy
             self.pumpInput()
-            DispatchQueue.main.async { self.debugScrollCount += 1 }
+            // Batched like the mouse counter to avoid per-event main-thread hops.
+            self.localScrollCount += 1
+            if self.localScrollCount % 20 == 0 {
+                let c = self.localScrollCount
+                DispatchQueue.main.async { self.debugScrollCount = c }
+            }
         }
     }
 
@@ -736,7 +862,7 @@ final class NetworkManager: ObservableObject {
     // over time — the slowdown that previously needed a reconnect to clear.
     // Must be called on `queue`.
     private func pumpInput() {
-        guard !inputInFlight else { return }
+        guard inputInFlight < 2 else { return }
         // Mouse first: quantize to integer pixels, keep the fractional remainder.
         let stepX = Int(pendingMouseDelta.dx.rounded())
         let stepY = Int(pendingMouseDelta.dy.rounded())
@@ -744,7 +870,13 @@ final class NetworkManager: ObservableObject {
             pendingMouseDelta.dx -= Double(stepX)
             pendingMouseDelta.dy -= Double(stepY)
             sendCoalesced(type: "mouse_move", payload: ["dx": stepX, "dy": stepY])
-            DispatchQueue.main.async { self.debugMouseMoveCount += 1 }
+            // Batch the debug counter: a main-thread hop + SwiftUI invalidation
+            // per packet at ~120 Hz adds measurable input latency.
+            localMoveCount += 1
+            if localMoveCount % 20 == 0 {
+                let c = localMoveCount
+                DispatchQueue.main.async { self.debugMouseMoveCount = c }
+            }
             return
         }
         // Then scroll.
@@ -758,20 +890,20 @@ final class NetworkManager: ObservableObject {
 
     // Send one coalesced packet and re-pump when it completes. Must be on `queue`.
     private func sendCoalesced(type: String, payload: [String: Any]) {
-        guard let conn = connection else { inputInFlight = false; return }
+        guard let conn = connection else { inputInFlight = 0; return }
         do {
             let packet = buildPacket(type: type, payload: payload)
             var line = try JSONSerialization.data(withJSONObject: packet, options: [])
             line.append(0x0A)
-            inputInFlight = true
+            inputInFlight += 1
             conn.send(content: line, completion: .contentProcessed { [weak self] _ in
                 guard let self = self else { return }
                 // NWConnection completions run on the connection's queue (== self.queue).
-                self.inputInFlight = false
+                self.inputInFlight = max(0, self.inputInFlight - 1)
                 self.pumpInput()
             })
         } catch {
-            inputInFlight = false
+            inputInFlight = max(0, inputInFlight - 1)
         }
     }
 
@@ -804,6 +936,29 @@ final class NetworkManager: ObservableObject {
     // Pinch -> zoom. zoomIn = true for pinch-out (zoom in), false for pinch-in.
     func sendPinch(zoomIn: Bool) {
         try? send(type: "pinch", payload: ["direction": zoomIn ? "in" : "out"])
+    }
+
+    // Media/system control: volume_up/down, mute, play_pause, next, previous,
+    // brightness_up/down, lock_screen.
+    func sendMedia(action: String) {
+        try? send(type: "media", payload: ["action": action])
+    }
+
+    // Types a whole string on the Mac (dictation / paste-through).
+    func sendTypeText(_ text: String) {
+        guard !text.isEmpty else { return }
+        try? send(type: "type_text", payload: ["text": text])
+    }
+
+    // Clipboard sync: push the given text into the Mac's clipboard.
+    func sendClipboardSet(_ text: String) {
+        try? send(type: "clipboard_set", payload: ["text": text])
+    }
+
+    // Clipboard sync: ask the Mac for its clipboard; reply arrives as
+    // "clipboard_data" and is placed on the iOS pasteboard.
+    func requestMacClipboard() {
+        try? send(type: "clipboard_get", payload: [:])
     }
 
     func sendKeyDown(keyCode: UInt16) {
