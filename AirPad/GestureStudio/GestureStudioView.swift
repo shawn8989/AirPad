@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct GestureStudioView: View {
     @ObservedObject private var store = GestureStore.shared

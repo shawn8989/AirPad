@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Combine
 
 enum GestureAction: Codable, Equatable, Hashable {
     case keyChord(name: String, keyCode: UInt16, command: Bool, option: Bool, control: Bool, shift: Bool)
