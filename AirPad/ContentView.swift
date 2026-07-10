@@ -203,66 +203,93 @@ struct ConnectionView: View {
     }
 }
 
-// Main control view: trackpad on top, one row of quick actions, then a grid
-// of modes/tools. Everything fits on screen — no horizontal overflow.
+// Main control view. iPhone: trackpad on top, quick actions, 4-column tile
+// grid. iPad / regular width: big trackpad beside a control column.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
     @ObservedObject private var proStore = ProStore.shared
-
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+    @Environment(\.horizontalSizeClass) private var hSize
 
     var body: some View {
-        VStack(spacing: 12) {
-            TrialBanner()
-                .padding(.top, 4)
+        if hSize == .regular {
+            // iPad: side-by-side — a large trackpad with controls on the right.
+            HStack(spacing: 14) {
+                trackpad
+                    .padding([.leading, .vertical])
 
-            TrackpadView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal)
-
-            // Quick actions
-            HStack(spacing: 10) {
-                Button {
-                    NetworkManager.shared.sendClick(button: "left")
-                } label: {
-                    Label("Click", systemImage: "cursorarrow.click")
-                        .frame(maxWidth: .infinity)
+                VStack(spacing: 12) {
+                    TrialBanner()
+                    quickActions
+                    tileGrid(columns: 2)
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.borderedProminent)
-
-                Button {
-                    NetworkManager.shared.sendClick(button: "right")
-                } label: {
-                    Label("Right Click", systemImage: "cursorarrow.rays")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    showKeyboard = true
-                } label: {
-                    Label("Keyboard", systemImage: "keyboard")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .frame(width: 320)
+                .padding([.trailing, .vertical])
             }
-            .lineLimit(1)
-            .padding(.horizontal)
+        } else {
+            VStack(spacing: 12) {
+                TrialBanner()
+                    .padding(.top, 4)
 
-            // Modes & tools. Pro tiles route to the paywall once the trial ends.
-            LazyVGrid(columns: gridColumns, spacing: 10) {
-                modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
-                modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
-                modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
-                modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
-                modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
-                modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
-                modeTile("Settings", "gearshape") { SettingsView() }
-                modeTile("Help", "questionmark.circle") { HelpView() }
+                trackpad
+                    .padding(.horizontal)
+
+                quickActions
+                    .padding(.horizontal)
+
+                tileGrid(columns: 4)
+                    .padding([.horizontal, .bottom])
             }
-            .padding([.horizontal, .bottom])
+        }
+    }
+
+    private var trackpad: some View {
+        TrackpadView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var quickActions: some View {
+        HStack(spacing: 10) {
+            Button {
+                NetworkManager.shared.sendClick(button: "left")
+            } label: {
+                Label("Click", systemImage: "cursorarrow.click")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                NetworkManager.shared.sendClick(button: "right")
+            } label: {
+                Label("Right Click", systemImage: "cursorarrow.rays")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                showKeyboard = true
+            } label: {
+                Label("Keyboard", systemImage: "keyboard")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .lineLimit(1)
+    }
+
+    // Modes & tools. Pro tiles route to the paywall once the trial ends.
+    private func tileGrid(columns: Int) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: columns), spacing: 10) {
+            modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
+            modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
+            modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
+            modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
+            modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
+            modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
+            modeTile("Settings", "gearshape") { SettingsView() }
+            modeTile("Help", "questionmark.circle") { HelpView() }
         }
     }
 
