@@ -938,6 +938,12 @@ final class NetworkManager: ObservableObject {
         try? send(type: "pinch", payload: ["direction": zoomIn ? "in" : "out"])
     }
 
+    // Absolute cursor position, normalized 0...1 on the Mac's main display
+    // (Live Screen "tap what you see").
+    func sendMouseMoveAbs(x: Double, y: Double) {
+        try? send(type: "mouse_move_abs", payload: ["x": x, "y": y])
+    }
+
     // Media/system control: volume_up/down, mute, play_pause, next, previous,
     // brightness_up/down, lock_screen.
     func sendMedia(action: String) {

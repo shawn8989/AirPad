@@ -14,7 +14,7 @@ struct LiveScreenView: View {
     @State private var fitMode: ContentMode = .fit
 
     // Control vs View (zoom/pan) mode
-    private enum ControlMode: String, CaseIterable, Identifiable { case pointer, view; var id: String { rawValue } }
+    private enum ControlMode: String, CaseIterable, Identifiable { case pointer, touch, view; var id: String { rawValue } }
     @State private var controlMode: ControlMode = .pointer
 
     // Fullscreen & overlays
@@ -86,6 +86,9 @@ struct LiveScreenView: View {
                 }
 
                 TrackpadGestureBridgeOverlay(isActive: controlMode == .pointer)
+                AbsoluteTouchOverlay(isActive: controlMode == .touch,
+                                     imageSize: network.liveImage?.size,
+                                     fill: fitMode == .fill)
                 EdgeGestureZones(isActive: isFullscreen && controlMode == .pointer)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -100,7 +103,9 @@ struct LiveScreenView: View {
                         withAnimation(.easeInOut(duration: 0.2)) { showOverlays.toggle() }
                         if showOverlays { scheduleOverlayAutoHide() } else { cancelOverlayAutoHide() }
                     }
-                    .allowsHitTesting(isFullscreen && controlMode != .pointer)
+                    // Only View mode uses tap-to-toggle-overlays; Pointer and
+                    // Touch modes need every tap for input.
+                    .allowsHitTesting(isFullscreen && controlMode == .view)
             )
 
             // Overlays
@@ -223,6 +228,7 @@ struct LiveScreenView: View {
                             // Mode toggle
                             Picker("Mode", selection: $controlMode) {
                                 Text("Pointer").tag(ControlMode.pointer)
+                                Text("Touch").tag(ControlMode.touch)
                                 Text("View").tag(ControlMode.view)
                             }
                             .pickerStyle(.segmented)
