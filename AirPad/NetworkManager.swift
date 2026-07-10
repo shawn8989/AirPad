@@ -59,6 +59,16 @@ final class NetworkManager: ObservableObject {
     @Published var currentMacName: String?
     @Published var lastFetchedClipboard: String?
 
+    struct NowPlayingInfo: Equatable {
+        var playing: Bool
+        var title: String
+        var artist: String
+        var app: String
+        var volume: Int?
+        var muted: Bool
+    }
+    @Published var nowPlaying: NowPlayingInfo?
+
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
     @Published var pushedDesktops: [MacDesktopInfo] = []
@@ -620,6 +630,18 @@ final class NetworkManager: ObservableObject {
             case "pong":
                 self.lastPongAt = CACurrentMediaTime()
 
+            case "now_playing":
+                if let payload = obj?["payload"] as? [String: Any] {
+                    let info = NowPlayingInfo(
+                        playing: payload["playing"] as? Bool ?? false,
+                        title: payload["title"] as? String ?? "",
+                        artist: payload["artist"] as? String ?? "",
+                        app: payload["app"] as? String ?? "",
+                        volume: payload["volume"] as? Int,
+                        muted: payload["muted"] as? Bool ?? false)
+                    DispatchQueue.main.async { self.nowPlaying = info }
+                }
+
             case "pair_qr_ok":
                 // The Mac accepted our QR proof: store the derived per-Mac
                 // secret (matches what the server stored) and we're done —
@@ -942,6 +964,17 @@ final class NetworkManager: ObservableObject {
     // (Live Screen "tap what you see").
     func sendMouseMoveAbs(x: Double, y: Double) {
         try? send(type: "mouse_move_abs", payload: ["x": x, "y": y])
+    }
+
+    // Ask the Mac for the current track + system volume; reply arrives as
+    // "now_playing" and lands in the nowPlaying published property.
+    func requestNowPlaying() {
+        try? send(type: "now_playing_get", payload: [:])
+    }
+
+    // Set the Mac's output volume (0-100).
+    func sendSetVolume(_ level: Int) {
+        try? send(type: "set_volume", payload: ["level": max(0, min(100, level))])
     }
 
     // Media/system control: volume_up/down, mute, play_pause, next, previous,

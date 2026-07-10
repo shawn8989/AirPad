@@ -8,9 +8,52 @@ struct MediaControlsView: View {
     @StateObject private var network = NetworkManager.shared
     @State private var confirmLock = false
     @State private var clipboardStatus: String?
+    @State private var volumeSlider: Double = 50
+    @State private var draggingVolume = false
 
     var body: some View {
         List {
+            Section("Now Playing") {
+                HStack(spacing: 12) {
+                    Image(systemName: network.nowPlaying?.playing == true ? "music.note" : "music.note.list")
+                        .font(.title2)
+                        .frame(width: 44, height: 44)
+                        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let np = network.nowPlaying, np.playing {
+                            Text(np.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text("\(np.artist)\(np.app.isEmpty ? "" : " — \(np.app)")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("Nothing playing")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text("Music and Spotify are supported")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    Spacer()
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "speaker.fill")
+                        .foregroundStyle(.secondary)
+                    Slider(value: $volumeSlider, in: 0...100, step: 1) { editing in
+                        draggingVolume = editing
+                        if !editing {
+                            NetworkManager.shared.sendSetVolume(Int(volumeSlider))
+                            if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                        }
+                    }
+                    Image(systemName: "speaker.wave.3.fill")
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("Volume") {
                 HStack(spacing: 12) {
                     mediaButton("speaker.slash.fill", "Mute", "mute")
@@ -99,6 +142,18 @@ struct MediaControlsView: View {
             }
         }
         .navigationTitle("Media & System")
+        .task {
+            // Poll the Mac for track + volume while this screen is visible.
+            while !Task.isCancelled {
+                NetworkManager.shared.requestNowPlaying()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+        .onChange(of: network.nowPlaying) { _, info in
+            if let volume = info?.volume, !draggingVolume {
+                volumeSlider = Double(volume)
+            }
+        }
     }
 
     private func keyButton(_ icon: String, _ title: String, keyCode: UInt16) -> some View {
