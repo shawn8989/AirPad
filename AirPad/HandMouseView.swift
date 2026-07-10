@@ -161,6 +161,11 @@ struct HandMouseView: View {
                     }
                     .overlay(alignment: .topTrailing) {
                         HStack(spacing: 8) {
+                            NavigationLink(destination: AirPopGameView()) {
+                                Image(systemName: "gamecontroller")
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
                             NavigationLink(destination: GestureStudioView()) {
                                 Image(systemName: "wand.and.stars")
                                     .padding(8)
