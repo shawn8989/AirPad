@@ -258,7 +258,7 @@ struct MainControlView: View {
                 modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
                 modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
                 modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
-                modeTile("Apps", "square.grid.2x2", pro: true) { AppShortcutsView() }
+                modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
                 modeTile("Settings", "gearshape") { SettingsView() }
                 modeTile("Help", "questionmark.circle") { HelpView() }
             }
