@@ -345,6 +345,15 @@ struct SettingsView: View {
             Section("Haptics") {
                 Toggle("Haptic Feedback", isOn: $hapticsEnabled)
             }
+            Section("Keyboard") {
+                Toggle("Auto keyboard in Live Screen", isOn: Binding(
+                    get: { UserDefaults.standard.object(forKey: "autoKeyboard") as? Bool ?? true },
+                    set: { UserDefaults.standard.set($0, forKey: "autoKeyboard") }
+                ))
+                Text("Pops the keyboard up automatically when you click into a text field on the Mac.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Section("Trackpad") {
                 Toggle("Show Touch Indicators", isOn: $showTouches)
                 Text("Draws a dot under each finger and shows how many fingers are detected — useful for checking that 3- and 4-finger gestures register.")

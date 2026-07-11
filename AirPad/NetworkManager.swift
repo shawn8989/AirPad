@@ -69,6 +69,13 @@ final class NetworkManager: ObservableObject {
     }
     @Published var nowPlaying: NowPlayingInfo?
 
+    // True while the Mac reports keyboard focus is in a text field (drives
+    // the auto keyboard popup). Set by the "text_focus" message.
+    @Published var macTextFieldFocused = false
+    // Non-nil when the Mac reported a streaming problem (e.g. missing
+    // Screen Recording permission).
+    @Published var streamErrorReason: String?
+
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
     @Published var pushedDesktops: [MacDesktopInfo] = []
@@ -630,6 +637,16 @@ final class NetworkManager: ObservableObject {
             case "pong":
                 self.lastPongAt = CACurrentMediaTime()
 
+            case "text_focus":
+                if let payload = obj?["payload"] as? [String: Any], let focused = payload["focused"] as? Bool {
+                    DispatchQueue.main.async { self.macTextFieldFocused = focused }
+                }
+
+            case "stream_error":
+                if let payload = obj?["payload"] as? [String: Any], let reason = payload["reason"] as? String {
+                    DispatchQueue.main.async { self.streamErrorReason = reason }
+                }
+
             case "now_playing":
                 if let payload = obj?["payload"] as? [String: Any] {
                     let info = NowPlayingInfo(
@@ -964,6 +981,16 @@ final class NetworkManager: ObservableObject {
     // (Live Screen "tap what you see").
     func sendMouseMoveAbs(x: Double, y: Double) {
         try? send(type: "mouse_move_abs", payload: ["x": x, "y": y])
+    }
+
+    // A key with explicit modifiers (accessory-bar shortcuts like ⌘C); the
+    // Mac applies the flags to the key events directly.
+    func sendKeyCombo(_ keyCode: UInt16, command: Bool = false, option: Bool = false,
+                      control: Bool = false, shift: Bool = false) {
+        try? send(type: "key_combo", payload: [
+            "keyCode": Int(keyCode),
+            "command": command, "option": option, "control": control, "shift": shift
+        ])
     }
 
     // Ask the Mac for the current track + system volume; reply arrives as

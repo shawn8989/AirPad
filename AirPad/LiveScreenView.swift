@@ -21,7 +21,10 @@ struct LiveScreenView: View {
 //    @State private var isFullscreen = false
     @State private var isFullscreen = UIDevice.current.userInterfaceIdiom == .phone
     @State private var showOverlays = true
-    @State private var showKeyboardSheet = false
+    @State private var kbVisible = false
+    @StateObject private var kbState = RemoteKeyboardState()
+    @AppStorage("autoKeyboard") private var autoKeyboard = true
+    @State private var lastFrameAt = Date()
     @State private var showShortcuts = false
 
     // Zoom & pan (view mode)
@@ -81,6 +84,17 @@ struct LiveScreenView: View {
                         Text("No frames yet")
                             .font(.headline)
                             .foregroundStyle(.secondary)
+                        if network.streamErrorReason == "screen_recording_permission" {
+                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable AirBridge, then relaunch AirBridge.")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        } else {
+                            Text("Retrying automatically…")
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     .padding()
                 }
@@ -90,6 +104,9 @@ struct LiveScreenView: View {
                                      imageSize: network.liveImage?.size,
                                      fill: fitMode == .fill)
                 EdgeGestureZones(isActive: isFullscreen && controlMode == .pointer)
+                RemoteKeyboardInput(isVisible: $kbVisible, state: kbState)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 16))
@@ -182,7 +199,34 @@ struct LiveScreenView: View {
             scheduleOverlayAutoHideIfNeeded()
         }
         .onDisappear { stopStreamingIfNeeded() }
-        .sheet(isPresented: $showKeyboardSheet) { KeyboardView() }
+        .onReceive(network.$liveImage) { image in
+            if image != nil {
+                lastFrameAt = Date()
+                if network.streamErrorReason != nil { network.streamErrorReason = nil }
+            }
+        }
+        .onReceive(network.$macTextFieldFocused) { focused in
+            // The Mac says a text field took focus: raise the keyboard.
+            if autoKeyboard && focused { kbVisible = true }
+        }
+        .onChange(of: network.isConnected) { _, connected in
+            // The stream dies with the old connection on auto-reconnect;
+            // re-request it on the fresh one.
+            if connected && isStreaming {
+                network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+            }
+        }
+        .task {
+            // Stream watchdog: if we're supposed to be streaming but frames
+            // stopped for >3s, re-request the stream (covers reconnects and
+            // transient capture failures on the Mac).
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if isStreaming && Date().timeIntervalSince(lastFrameAt) > 3 && network.isConnected {
+                    network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+                }
+            }
+        }
         .sheet(isPresented: $showShortcuts) { AppShortcutsView() }
         .onChange(of: isStreaming) { _, streaming in
             DispatchQueue.main.async {
@@ -248,7 +292,7 @@ struct LiveScreenView: View {
                             .buttonStyle(.bordered)
 
                             // Keyboard
-                            Button { showKeyboardSheet = true } label: {
+                            Button { kbVisible = true } label: {
                                 Label("Keyboard", systemImage: "keyboard")
                             }
                             .buttonStyle(.bordered)
