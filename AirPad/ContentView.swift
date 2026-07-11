@@ -8,6 +8,7 @@
 import SwiftUI
 import UIKit
 import StoreKit
+import Combine
 
 // Root app view that navigates between Connection, Trackpad, and Keyboard screens.
 struct ContentView: View {

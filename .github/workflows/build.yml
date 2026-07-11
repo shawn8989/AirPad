@@ -16,6 +16,9 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Check module imports (fast)
+        run: bash scripts/check-imports.sh
+
       - name: Build (no signing)
         run: |
           set -o pipefail
