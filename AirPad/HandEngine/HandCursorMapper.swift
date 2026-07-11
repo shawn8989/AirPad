@@ -19,6 +19,13 @@ private struct OneEuroFilter {
     private var prev: Double?
     private var prevDeriv: Double = 0
 
+    // Explicit init: the synthesized memberwise one is private because the
+    // filter-state properties are private.
+    init(minCutoff: Double, beta: Double) {
+        self.minCutoff = minCutoff
+        self.beta = beta
+    }
+
     private func alpha(cutoff: Double, dt: Double) -> Double {
         let tau = 1.0 / (2.0 * .pi * cutoff)
         return 1.0 / (1.0 + tau / dt)
