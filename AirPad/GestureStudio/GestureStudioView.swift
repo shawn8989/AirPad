@@ -29,20 +29,22 @@ struct GestureStudioView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach($store.gestures) { $gesture in
-                        HStack(spacing: 12) {
-                            Image(systemName: gesture.action.icon)
-                                .frame(width: 26)
-                                .foregroundStyle(Color.accentColor)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(gesture.name)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(gesture.action.displayName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        NavigationLink(destination: GestureEditView(gesture: $gesture)) {
+                            HStack(spacing: 12) {
+                                Image(systemName: gesture.action.icon)
+                                    .frame(width: 26)
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(gesture.name)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(gesture.action.displayName)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Toggle("", isOn: $gesture.enabled)
+                                    .labelsHidden()
                             }
-                            Spacer()
-                            Toggle("", isOn: $gesture.enabled)
-                                .labelsHidden()
                         }
                     }
                     .onDelete { store.gestures.remove(atOffsets: $0) }
@@ -118,11 +120,20 @@ struct GestureRecorderView: View {
                 VStack(spacing: 12) {
                     TextField("Gesture name (e.g. Peace Sign)", text: $name)
                         .textFieldStyle(.roundedBorder)
-                    Picker("Action", selection: $action) {
-                        ForEach(GestureAction.presets, id: \.self) { preset in
-                            Text(preset.displayName).tag(preset)
+                    NavigationLink {
+                        ActionPickerView(selection: $action)
+                    } label: {
+                        HStack {
+                            Label(action.displayName, systemImage: action.icon)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
+                        .padding(10)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
                     }
+                    .buttonStyle(.plain)
                     Button {
                         store.gestures.append(CustomGesture(
                             name: name.isEmpty ? "My Gesture" : name,
@@ -201,6 +212,242 @@ struct GestureRecorderView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick(n - 1) }
         }
         tick(3)
+    }
+}
+
+/// Edit an existing gesture: rename it or point it at a different action.
+struct GestureEditView: View {
+    @Binding var gesture: CustomGesture
+
+    var body: some View {
+        Form {
+            Section("Name") {
+                TextField("Gesture name", text: $gesture.name)
+            }
+            Section("Action") {
+                NavigationLink {
+                    ActionPickerView(selection: $gesture.action)
+                } label: {
+                    Label(gesture.action.displayName, systemImage: gesture.action.icon)
+                }
+            }
+            Section {
+                Toggle("Enabled", isOn: $gesture.enabled)
+            } footer: {
+                Text("The pose itself can't be edited — record a new gesture to change it.")
+            }
+        }
+        .navigationTitle("Edit Gesture")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Everything a gesture can do: open apps and websites, type text, and the
+/// full preset catalog (navigation, media, editing, windows, screenshots).
+struct ActionPickerView: View {
+    @Binding var selection: GestureAction
+    @Environment(\.dismiss) private var dismiss
+    @State private var showAppPicker = false
+    @State private var showURLEditor = false
+    @State private var showTextEditor = false
+
+    var body: some View {
+        List {
+            Section("Open on the Mac") {
+                Button { showAppPicker = true } label: {
+                    pickRow(Label("Open an App…", systemImage: "app.badge"),
+                            selected: isLaunchApp)
+                }
+                Button { showURLEditor = true } label: {
+                    pickRow(Label("Open a Website…", systemImage: "safari"),
+                            selected: isOpenURL)
+                }
+                Button { showTextEditor = true } label: {
+                    pickRow(Label("Type Text…", systemImage: "keyboard"),
+                            selected: isTypeText)
+                }
+            }
+
+            ForEach(GestureAction.presetGroups, id: \.title) { group in
+                Section(group.title) {
+                    ForEach(group.actions, id: \.self) { preset in
+                        Button {
+                            selection = preset
+                            dismiss()
+                        } label: {
+                            pickRow(Label(preset.displayName, systemImage: preset.icon),
+                                    selected: selection == preset)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Choose Action")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showAppPicker) {
+            NavigationStack {
+                MacAppActionPicker { app in
+                    selection = .launchApp(name: app.name, bundleID: app.bundleIdentifier)
+                    showAppPicker = false
+                    dismiss()
+                }
+            }
+        }
+        .sheet(isPresented: $showURLEditor) {
+            NavigationStack {
+                URLActionEditor(initial: currentURL) { name, url in
+                    selection = .openURL(name: name, url: url)
+                    showURLEditor = false
+                    dismiss()
+                }
+            }
+        }
+        .sheet(isPresented: $showTextEditor) {
+            NavigationStack {
+                TypeTextActionEditor(initial: currentText) { text in
+                    selection = .typeText(text)
+                    showTextEditor = false
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private func pickRow(_ label: some View, selected: Bool) -> some View {
+        HStack {
+            label.foregroundStyle(.primary)
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+            }
+        }
+    }
+
+    private var isLaunchApp: Bool { if case .launchApp = selection { return true }; return false }
+    private var isOpenURL: Bool { if case .openURL = selection { return true }; return false }
+    private var isTypeText: Bool { if case .typeText = selection { return true }; return false }
+    private var currentURL: (String, String) {
+        if case .openURL(let name, let url) = selection { return (name, url) }
+        return ("", "")
+    }
+    private var currentText: String {
+        if case .typeText(let t) = selection { return t }
+        return ""
+    }
+}
+
+/// Picks one of the Mac's installed apps (same list the Launcher uses).
+struct MacAppActionPicker: View {
+    var onPick: (MacAppInfo) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var apps: [MacAppInfo] = []
+    @State private var query = ""
+    @State private var failed = false
+
+    private var filtered: [MacAppInfo] {
+        guard !query.isEmpty else { return apps }
+        return apps.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        Group {
+            if apps.isEmpty && !failed {
+                ProgressView("Loading apps from your Mac…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if failed {
+                ContentUnavailableView("Couldn't load apps",
+                                       systemImage: "wifi.exclamationmark",
+                                       description: Text("Make sure you're connected to your Mac, then try again."))
+            } else {
+                List(filtered) { app in
+                    Button { onPick(app) } label: {
+                        HStack {
+                            Image(systemName: "app.dashed")
+                                .foregroundStyle(Color.accentColor)
+                            Text(app.name)
+                            Spacer()
+                            if app.isRunning {
+                                Circle().fill(.green).frame(width: 8, height: 8)
+                            }
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .searchable(text: $query, prompt: "Search apps")
+            }
+        }
+        .navigationTitle("Choose App")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        .task {
+            do {
+                apps = try await NetworkManager.shared.requestInstalledApps()
+                    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            } catch {
+                failed = true
+            }
+        }
+    }
+}
+
+/// Name + URL for an "open website" action.
+struct URLActionEditor: View {
+    var initial: (name: String, url: String)
+    var onSave: (String, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var url = ""
+
+    var body: some View {
+        Form {
+            Section("Website") {
+                TextField("Name (e.g. YouTube)", text: $name)
+                TextField("https://…", text: $url)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            Section {
+                Button("Save") {
+                    var u = url.trimmingCharacters(in: .whitespaces)
+                    if !u.isEmpty && !u.contains("://") { u = "https://" + u }
+                    onSave(name.isEmpty ? u : name, u)
+                }
+                .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .navigationTitle("Open a Website")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        .onAppear {
+            name = initial.name
+            url = initial.url
+        }
+    }
+}
+
+/// Text snippet for a "type text" action.
+struct TypeTextActionEditor: View {
+    var initial: String
+    var onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        Form {
+            Section("Text to type on the Mac") {
+                TextField("e.g. your email address", text: $text, axis: .vertical)
+                    .lineLimit(3...6)
+            }
+            Section {
+                Button("Save") { onSave(text) }
+                    .disabled(text.isEmpty)
+            }
+        }
+        .navigationTitle("Type Text")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        .onAppear { text = initial }
     }
 }
 

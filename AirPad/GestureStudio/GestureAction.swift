@@ -16,6 +16,8 @@ enum GestureAction: Codable, Equatable, Hashable {
     case desktopRight
     case missionControl
     case typeText(String)
+    case launchApp(name: String, bundleID: String)
+    case openURL(name: String, url: String)
 
     var displayName: String {
         switch self {
@@ -25,6 +27,8 @@ enum GestureAction: Codable, Equatable, Hashable {
         case .desktopRight: return "Next Desktop"
         case .missionControl: return "Mission Control"
         case .typeText(let t): return "Type “\(t.prefix(18))\(t.count > 18 ? "…" : "")”"
+        case .launchApp(let name, _): return "Open \(name)"
+        case .openURL(let name, _): return name.isEmpty ? "Open Website" : "Open \(name)"
         }
     }
 
@@ -35,28 +39,59 @@ enum GestureAction: Codable, Equatable, Hashable {
         case .desktopLeft, .desktopRight: return "rectangle.righthalf.inset.filled.arrow.right"
         case .missionControl: return "square.grid.3x3"
         case .typeText: return "keyboard"
+        case .launchApp: return "app.badge"
+        case .openURL: return "safari"
         }
     }
 
-    /// Curated choices shown in the Studio's action picker.
-    static let presets: [GestureAction] = [
-        .missionControl,
-        .desktopLeft,
-        .desktopRight,
-        .media(name: "Play / Pause", action: "play_pause"),
-        .media(name: "Next Track", action: "next"),
-        .media(name: "Volume Up", action: "volume_up"),
-        .media(name: "Volume Down", action: "volume_down"),
-        .media(name: "Mute", action: "mute"),
-        .keyChord(name: "Copy (⌘C)", keyCode: 8, command: true, option: false, control: false, shift: false),
-        .keyChord(name: "Paste (⌘V)", keyCode: 9, command: true, option: false, control: false, shift: false),
-        .keyChord(name: "Undo (⌘Z)", keyCode: 6, command: true, option: false, control: false, shift: false),
-        .keyChord(name: "Screenshot (⌘⇧4)", keyCode: 21, command: true, option: false, control: false, shift: true),
-        .keyChord(name: "Spotlight (⌘Space)", keyCode: 49, command: true, option: false, control: false, shift: false),
-        .keyChord(name: "Close Window (⌘W)", keyCode: 13, command: true, option: false, control: false, shift: false),
-        .keyChord(name: "New Tab (⌘T)", keyCode: 17, command: true, option: false, control: false, shift: false),
-        .media(name: "Lock Screen", action: "lock_screen")
+    /// Curated choices shown in the Studio's action picker, grouped for the UI.
+    static let presetGroups: [(title: String, actions: [GestureAction])] = [
+        ("Navigation", [
+            .missionControl,
+            .desktopLeft,
+            .desktopRight,
+            .keyChord(name: "App Switcher (⌘Tab)", keyCode: 48, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Spotlight (⌘Space)", keyCode: 49, command: true, option: false, control: false, shift: false),
+        ]),
+        ("Media & System", [
+            .media(name: "Play / Pause", action: "play_pause"),
+            .media(name: "Next Track", action: "next"),
+            .media(name: "Previous Track", action: "previous"),
+            .media(name: "Volume Up", action: "volume_up"),
+            .media(name: "Volume Down", action: "volume_down"),
+            .media(name: "Mute", action: "mute"),
+            .media(name: "Brightness Up", action: "brightness_up"),
+            .media(name: "Brightness Down", action: "brightness_down"),
+            .media(name: "Lock Screen", action: "lock_screen"),
+        ]),
+        ("Editing", [
+            .keyChord(name: "Copy (⌘C)", keyCode: 8, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Paste (⌘V)", keyCode: 9, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Cut (⌘X)", keyCode: 7, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Undo (⌘Z)", keyCode: 6, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Redo (⌘⇧Z)", keyCode: 6, command: true, option: false, control: false, shift: true),
+            .keyChord(name: "Select All (⌘A)", keyCode: 0, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Save (⌘S)", keyCode: 1, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Find (⌘F)", keyCode: 3, command: true, option: false, control: false, shift: false),
+        ]),
+        ("Windows & Tabs", [
+            .keyChord(name: "Close Window (⌘W)", keyCode: 13, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "New Window (⌘N)", keyCode: 45, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "New Tab (⌘T)", keyCode: 17, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Reopen Tab (⌘⇧T)", keyCode: 17, command: true, option: false, control: false, shift: true),
+            .keyChord(name: "Minimize (⌘M)", keyCode: 46, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Hide App (⌘H)", keyCode: 4, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Quit App (⌘Q)", keyCode: 12, command: true, option: false, control: false, shift: false),
+            .keyChord(name: "Refresh (⌘R)", keyCode: 15, command: true, option: false, control: false, shift: false),
+        ]),
+        ("Screenshots", [
+            .keyChord(name: "Screenshot Area (⌘⇧4)", keyCode: 21, command: true, option: false, control: false, shift: true),
+            .keyChord(name: "Screenshot Screen (⌘⇧3)", keyCode: 20, command: true, option: false, control: false, shift: true),
+        ]),
     ]
+
+    /// Flat list (first entry is the recorder's default selection).
+    static let presets: [GestureAction] = presetGroups.flatMap(\.actions)
 
     func execute() {
         let net = NetworkManager.shared
@@ -81,6 +116,10 @@ enum GestureAction: Codable, Equatable, Hashable {
             net.sendSwipe(fingers: 3, direction: "up")
         case .typeText(let text):
             net.sendTypeText(text)
+        case .launchApp(_, let bundleID):
+            net.sendLaunchApp(bundleIdentifier: bundleID)
+        case .openURL(_, let url):
+            net.sendOpenURL(url)
         }
     }
 }

@@ -20,6 +20,10 @@ extension NetworkManager {
         try? send(type: "launch_app", payload: ["bundleIdentifier": bundleIdentifier])
     }
 
+    func sendOpenURL(_ url: String) {
+        try? send(type: "open_url", payload: ["url": url])
+    }
+
     func sendQuitApp(bundleIdentifier: String) {
         try? send(type: "quit_app", payload: ["bundleIdentifier": bundleIdentifier])
     }
