@@ -272,15 +272,19 @@ final class HandGestureRecognizer {
     }
 
     private func trackPinch(_ hand: VNHumanHandPoseObservation, scale: CGFloat) {
-        guard let index = point(hand, .indexTip, min: 0.35),
-              let thumb = point(hand, .thumbTip, min: 0.35) else { return }
+        guard let index = point(hand, .indexTip, min: 0.3),
+              let thumb = point(hand, .thumbTip, min: 0.3) else { return }
         // Normalized by hand size so pinch feels the same at any distance.
         let d = distance(index, thumb) / scale
-        if !pinchActive && d < 0.35 {
+        if !pinchActive && d < 0.40 {
             pinchActive = true
+            // Closing the pinch shifts the knuckles slightly — hold the cursor
+            // still through the click so it can't slide off the target.
+            cursor.freeze(for: 0.15)
             onEvent?(.pinchBegan)
         } else if pinchActive && d > 0.55 {
             pinchActive = false
+            cursor.freeze(for: 0.12)
             onEvent?(.pinchEnded)
         }
     }

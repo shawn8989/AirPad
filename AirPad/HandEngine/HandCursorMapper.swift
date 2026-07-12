@@ -60,10 +60,10 @@ final class HandCursorMapper {
     var pixelsPerFrame: Double = 1600
 
     // One-Euro tuning: positions are in normalized 0...1 units, hand velocities
-    // are roughly 0...2 units/s. minCutoff ~1Hz keeps a hovering hand rock
+    // are roughly 0...2 units/s. A low minCutoff keeps a hovering hand rock
     // steady; beta lifts the cutoff quickly once the hand actually moves.
-    private var fx = OneEuroFilter(minCutoff: 1.0, beta: 12.0)
-    private var fy = OneEuroFilter(minCutoff: 1.0, beta: 12.0)
+    private var fx = OneEuroFilter(minCutoff: 0.7, beta: 15.0)
+    private var fy = OneEuroFilter(minCutoff: 0.7, beta: 15.0)
 
     private var lastSent: CGPoint?
     private var lastTime: TimeInterval = 0
@@ -78,8 +78,18 @@ final class HandCursorMapper {
                         y: fy.filter(Double(anchor.y), dt: dt))
         guard time >= freezeUntil else { lastSent = p; return nil }
         guard let last = lastSent else { lastSent = p; return nil }
-        let dx = Double(p.x - last.x) * pixelsPerFrame * sensitivity
-        let dy = Double(p.y - last.y) * pixelsPerFrame * sensitivity
+        let rawDx = Double(p.x - last.x)
+        let rawDy = Double(p.y - last.y)
+
+        // Speed-adaptive gain (pointer acceleration): a slow, deliberate hand
+        // gets sub-unity gain for pixel-precise targeting; a fast sweep gets
+        // extra reach so the whole screen is coverable without straining.
+        let speed = hypot(rawDx, rawDy) / dt          // normalized units/s
+        let t = min(max((speed - 0.04) / 0.86, 0), 1)
+        let gain = 0.45 + 1.05 * t * t * (3 - 2 * t)  // smoothstep 0.45...1.5
+
+        let dx = rawDx * pixelsPerFrame * sensitivity * gain
+        let dy = rawDy * pixelsPerFrame * sensitivity * gain
         guard abs(dx) >= 0.5 || abs(dy) >= 0.5 else {
             return nil  // leave lastSent so sub-pixel motion accumulates
         }
