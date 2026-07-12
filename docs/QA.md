@@ -1,6 +1,6 @@
 # AirPad / AirBridge — Release-Candidate QA Script
 
-One pass ≈ 20–25 minutes. Run before every release with a Release build of
+One pass ≈ 30 minutes. Run before every release with a Release build of
 AirPad on a real iPhone and the exported AirBridge.app on the Mac.
 Check each box; anything that fails blocks the release.
 
@@ -60,17 +60,46 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 - [ ] Custom gesture does NOT misfire during normal pointing for 60s.
 - [ ] Pinch behaves the same at ~1ft and ~3ft from the camera.
 
-## 5. Media, clipboard, dictation, live screen (4 min)
+## 5. Media, clipboard, dictation (4 min)
 
 - [ ] Volume up/down/mute show the macOS HUD; play/pause controls Music.
+- [ ] **Now Playing:** play a song in Music → title/artist appear within ~3s;
+      volume slider moves the Mac's volume and follows external changes.
 - [ ] Brightness up/down works (built-in display).
 - [ ] Presentation: prev/next arrows work in a Keynote/Slides deck.
 - [ ] Clipboard: send phone→Mac (⌘V pastes it); Type on Mac types it;
       fetch Mac→phone (paste in Notes on the phone).
 - [ ] Dictation: dictate, review, Type on Mac lands at the cursor.
 - [ ] Lock Mac Screen asks to confirm, then locks.
-- [ ] Live Screen streams; pointer mode controls; quality slider works.
 - [ ] AirBridge Activity tab logged the clipboard transfers.
+
+## 5b. Live Screen, Touch mode & keyboard (5 min)
+
+- [ ] Live Screen streams; pointer mode controls; quality slider works.
+- [ ] **Stream recovery:** quit & relaunch AirBridge while watching → frames
+      resume by themselves within a few seconds of reconnect (no manual Start).
+- [ ] Revoke Screen Recording permission → phone shows the how-to-fix message
+      instead of a blank "no frames" screen.
+- [ ] **Touch mode:** tap = click exactly what you tapped (check the corners —
+      fit AND fill); double-tap a Finder folder = it opens; two-finger pan
+      scrolls a webpage (direction honors Natural Scrolling); hold-then-move
+      drags a window; hold-and-release in place = right-click menu.
+- [ ] **Keyboard:** Keyboard button raises the SYSTEM keyboard with the
+      ⌘⌥⌃⇧/Esc/Tab/arrows bar; typing lands on the Mac; ⌘ then C sends ⌘C
+      (modifier clears after one key); Return and Backspace work.
+- [ ] **Auto-popup:** click into a text field via the phone → keyboard rises
+      by itself; while streaming, Tab into a field ON THE MAC → it also rises.
+      Toggle off "Auto keyboard in Live Screen" in Settings → it stops.
+- [ ] Same keyboard works from the main trackpad screen (button + auto-popup).
+
+## 5c. Desktops & Apps switcher (2 min)
+
+- [ ] Desktops row shows every Space with window counts; tap one → the Mac
+      switches there and the highlight follows.
+- [ ] Apps grouped sanely (no Dock/Control Center junk); expanding an app
+      lists its windows with desktop badges; tapping a window on ANOTHER
+      desktop switches Space and focuses it.
+- [ ] App icons load; Launcher link opens the shortcuts grid.
 
 ## 6. Monetization (3 min — Release build or Simulate Free)
 
@@ -100,6 +129,13 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
 - [ ] Pair with both; picker switches on the fly; per-Mac auth works after
       relaunching both apps.
+
+## 9. iPad & extras (2 min, iPad optional)
+
+- [ ] iPad: trackpad fills the left, controls column on the right; tiles and
+      sheets are usable in both orientations.
+- [ ] AirPop (game button on Hand Mouse): bubbles pop with a pinch; score and
+      best persist; quitting mid-round returns cleanly to Hand Mouse.
 
 ---
 
