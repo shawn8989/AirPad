@@ -103,6 +103,9 @@ struct ConnectionView: View {
     @ObservedObject private var network = NetworkManager.shared
     @State private var searchPulse = false
     @State private var showQRScanner = false
+    @State private var showAddressPrompt = false
+    @State private var manualAddress = ""
+    @State private var wokeMacName: String?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -192,6 +195,30 @@ struct ConnectionView: View {
                         bottomBarLabel("Refresh", "arrow.clockwise")
                     }
                     Spacer()
+                    Menu {
+                        let known = KnownMacStore.all().filter { $0.macAddress != nil }
+                        if !known.isEmpty {
+                            Section("Wake a sleeping Mac") {
+                                ForEach(known) { mac in
+                                    Button {
+                                        wokeMacName = mac.name
+                                        WakeOnLAN.wake(macAddress: mac.macAddress!)
+                                        network.startBrowsing()
+                                    } label: {
+                                        Label(mac.name, systemImage: "power")
+                                    }
+                                }
+                            }
+                        }
+                        Button {
+                            showAddressPrompt = true
+                        } label: {
+                            Label("Connect by Address…", systemImage: "network")
+                        }
+                    } label: {
+                        bottomBarLabel("Wake / IP", "power")
+                    }
+                    Spacer()
                     NavigationLink(destination: HelpView()) {
                         bottomBarLabel("Help", "questionmark.circle")
                     }
@@ -215,6 +242,30 @@ struct ConnectionView: View {
         }
         .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
         .onAppear { network.startBrowsing() }
+        .alert("Connect by Address", isPresented: $showAddressPrompt) {
+            TextField("IP or hostname (e.g. 100.64.1.5)", text: $manualAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Connect") {
+                var host = manualAddress
+                var port = NetworkManager.defaultPort
+                if let colon = host.lastIndex(of: ":"), let p = UInt16(host[host.index(after: colon)...]) {
+                    port = p
+                    host = String(host[..<colon])
+                }
+                network.connectToAddress(host, port: port)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. AirBridge listens on port \(String(NetworkManager.defaultPort)).")
+        }
+        .alert("Wake packet sent", isPresented: .init(
+            get: { wokeMacName != nil },
+            set: { if !$0 { wokeMacName = nil } })) {
+            Button("OK") { wokeMacName = nil }
+        } message: {
+            Text("Sent a Wake-on-LAN packet to \(wokeMacName ?? "the Mac"). It wakes only if \"Wake for network access\" is on (System Settings → Battery → Options) and the Mac is on this network. It may take a few seconds to appear.")
+        }
     }
 
     private func bottomBarLabel(_ title: String, _ icon: String) -> some View {

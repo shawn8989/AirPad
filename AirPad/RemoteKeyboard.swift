@@ -99,7 +99,17 @@ struct RemoteKeyboardInput: UIViewRepresentable {
 
     func updateUIView(_ field: ForwardingTextField, context: Context) {
         if isVisible && !field.isFirstResponder {
-            field.becomeFirstResponder()
+            field.resetSentinel()
+            if !field.becomeFirstResponder() {
+                // The window may not be ready on the exact frame the flag
+                // flips (e.g. auto-popup during a screen transition) — retry.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if isVisible && !field.isFirstResponder {
+                        field.resetSentinel()
+                        field.becomeFirstResponder()
+                    }
+                }
+            }
         } else if !isVisible && field.isFirstResponder {
             field.resignFirstResponder()
         }
@@ -109,15 +119,44 @@ struct RemoteKeyboardInput: UIViewRepresentable {
         weak var remoteState: RemoteKeyboardState?
         var onDismissed: (() -> Void)?
 
+        // The field always holds this sentinel. Typing grows the text past it,
+        // backspace shrinks it below it — the editingChanged diff below turns
+        // both into remote key events. This is the ONLY reliable capture: on
+        // real devices the system keyboard inserts text through UITextField's
+        // internal editing path, and a subclass insertText override is simply
+        // never called (delete worked, letters didn't — that was why).
+        private let sentinel = "\u{200B}"
+
         override init(frame: CGRect) {
             super.init(frame: frame)
             delegate = self
             alpha = 0.02  // must be "visible" to become first responder reliably
+            text = sentinel
+            addTarget(self, action: #selector(editingChanged), for: .editingChanged)
         }
         required init?(coder: NSCoder) { fatalError() }
 
-        // UIKeyInput forwarding: every character the system keyboard produces.
-        override func insertText(_ text: String) {
+        func resetSentinel() {
+            text = sentinel
+        }
+
+        @objc private func editingChanged() {
+            let current = text ?? ""
+            defer {
+                if current != sentinel { text = sentinel }
+            }
+            if current.isEmpty {
+                remoteState?.sendKey(51)  // backspace consumed the sentinel
+            } else if current.hasPrefix(sentinel), current.count > sentinel.count {
+                forward(String(current.dropFirst(sentinel.count)))
+            } else if current != sentinel {
+                // Unexpected shape (cursor moved, autofill...): strip and forward.
+                let typed = current.replacingOccurrences(of: sentinel, with: "")
+                if !typed.isEmpty { forward(typed) }
+            }
+        }
+
+        private func forward(_ text: String) {
             guard let state = remoteState else { return }
             if text == "\n" {
                 state.sendKey(36)  // Return
@@ -147,8 +186,20 @@ struct RemoteKeyboardInput: UIViewRepresentable {
             NetworkManager.shared.sendTypeText(text)  // emoji, accents, paste
         }
 
+        // Fast path when UIKit does call these (simulator, hardware keyboards);
+        // they bypass the text change, so the diff path never double-sends.
+        override func insertText(_ text: String) {
+            forward(text)
+        }
+
         override func deleteBackward() {
             remoteState?.sendKey(51)  // Delete/Backspace (honors held modifiers)
+        }
+
+        // UITextField sends Return through the delegate, NOT insertText("\n").
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            remoteState?.sendKey(36)
+            return false
         }
 
         func textFieldDidEndEditing(_ textField: UITextField) {

@@ -271,6 +271,19 @@ final class NetworkManager: ObservableObject {
         browser.start(queue: queue)
     }
 
+    /// AirBridge's fixed listening port (it falls back to ephemeral only if taken).
+    static let defaultPort: UInt16 = 52417
+
+    /// Connect straight to a host (IP or DNS name) — for VPN/Tailscale setups
+    /// where Bonjour discovery can't cross networks. Pairing and encryption
+    /// work exactly as on the local network.
+    func connectToAddress(_ host: String, port: UInt16 = NetworkManager.defaultPort) {
+        let trimmed = host.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let nwPort = NWEndpoint.Port(rawValue: port) else { return }
+        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(trimmed), port: nwPort)
+        connect(to: DiscoveredService(name: trimmed, host: trimmed, port: Int(port), endpoint: endpoint))
+    }
+
     // MARK: - Connect
     func connect(to service: DiscoveredService) {
         log("Connecting to service: \(service.name)")
@@ -633,7 +646,13 @@ final class NetworkManager: ObservableObject {
                 if let payload = obj?["payload"] as? [String: Any], let macID = payload["macID"] as? String {
                     self.currentMacID = macID
                     let macName = payload["macName"] as? String
-                    DispatchQueue.main.async { self.currentMacName = macName }
+                    let macAddress = payload["macAddress"] as? String
+                    DispatchQueue.main.async {
+                        self.currentMacName = macName
+                        // Remember this Mac (name + hardware address) so the
+                        // connect screen can offer Wake-on-LAN later.
+                        KnownMacStore.upsert(id: macID, name: macName ?? "Mac", macAddress: macAddress)
+                    }
                 }
 
             case "pong":
