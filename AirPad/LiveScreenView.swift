@@ -21,9 +21,7 @@ struct LiveScreenView: View {
 //    @State private var isFullscreen = false
     @State private var isFullscreen = UIDevice.current.userInterfaceIdiom == .phone
     @State private var showOverlays = true
-    @State private var kbVisible = false
-    @StateObject private var kbState = RemoteKeyboardState()
-    @AppStorage("autoKeyboard") private var autoKeyboard = true
+    @ObservedObject private var keyboard = KeyboardPresenter.shared
     @State private var lastFrameAt = Date()
     @State private var showShortcuts = false
 
@@ -104,9 +102,8 @@ struct LiveScreenView: View {
                                      imageSize: network.liveImage?.size,
                                      fill: fitMode == .fill)
                 EdgeGestureZones(isActive: isFullscreen && controlMode == .pointer)
-                RemoteKeyboardInput(isVisible: $kbVisible, state: kbState)
-                    .frame(width: 1, height: 1)
-                    .allowsHitTesting(false)
+                // The remote keyboard itself is hosted once at the root
+                // (ContentView) — this screen only toggles KeyboardPresenter.
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 16))
@@ -205,10 +202,6 @@ struct LiveScreenView: View {
                 if network.streamErrorReason != nil { network.streamErrorReason = nil }
             }
         }
-        .onReceive(network.$macTextFieldFocused) { focused in
-            // The Mac says a text field took focus: raise the keyboard.
-            if autoKeyboard && focused { kbVisible = true }
-        }
         .onChange(of: network.isConnected) { _, connected in
             // The stream dies with the old connection on auto-reconnect;
             // re-request it on the fresh one.
@@ -292,7 +285,7 @@ struct LiveScreenView: View {
                             .buttonStyle(.bordered)
 
                             // Keyboard
-                            Button { kbVisible = true } label: {
+                            Button { keyboard.visible = true } label: {
                                 Label("Keyboard", systemImage: "keyboard")
                             }
                             .buttonStyle(.bordered)

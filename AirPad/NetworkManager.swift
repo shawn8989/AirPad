@@ -946,8 +946,8 @@ final class NetworkManager: ObservableObject {
         }
     }
 
-    func sendClick(button: String = "left") {
-        try? send(type: "mouse_click", payload: ["button": button])
+    func sendClick(button: String = "left", count: Int = 1) {
+        try? send(type: "mouse_click", payload: ["button": button, "count": count])
         DispatchQueue.main.async { self.debugClickCount += 1 }
     }
 

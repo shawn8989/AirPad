@@ -55,6 +55,16 @@ final class RemoteKeyboardState: ObservableObject {
     }
 }
 
+/// App-wide keyboard presenter. Exactly ONE RemoteKeyboardInput may live in
+/// the view hierarchy (hosted at the root in ContentView) — two instances
+/// fight over first-responder status and dismiss each other. Every screen
+/// raises the keyboard through this shared state instead of hosting its own.
+final class KeyboardPresenter: ObservableObject {
+    static let shared = KeyboardPresenter()
+    @Published var visible = false
+    let state = RemoteKeyboardState()
+}
+
 /// Hidden UIKit text input that raises the system keyboard and forwards
 /// everything typed to the Mac.
 struct RemoteKeyboardInput: UIViewRepresentable {

@@ -4,8 +4,9 @@
 //
 //  "Tap what you see" for Live Screen: touches on the streamed image are
 //  mapped to display-normalized coordinates and sent as absolute cursor
-//  moves — tap to click exactly there, drag to move the pointer, long-press
-//  for a right click.
+//  moves. Tap to click, double-tap to double-click (opens files), one-finger
+//  pan to move the pointer, two-finger pan to scroll, and hold to either
+//  right-click (release in place) or drag (move while holding).
 //
 
 import SwiftUI
@@ -34,12 +35,25 @@ final class AbsoluteTouchView: UIView {
     private var fill = false
     private var lastMoveSent: TimeInterval = 0
 
+    // Hold state: nil = not holding, false = holding in place (right click on
+    // release), true = dragging with the left button down.
+    private var holdIsDragging: Bool?
+    private var holdStartPoint: CGPoint = .zero
+    private var lastScrollPoint: CGPoint = .zero
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
-        isMultipleTouchEnabled = false
+        isMultipleTouchEnabled = true
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        addGestureRecognizer(doubleTap)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        // Wait out the double-tap window so a double-tap doesn't also fire two
+        // singles — macOS only opens things on a genuine clickState=2 pair.
+        tap.require(toFail: doubleTap)
         addGestureRecognizer(tap)
 
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
@@ -49,6 +63,11 @@ final class AbsoluteTouchView: UIView {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.maximumNumberOfTouches = 1
         addGestureRecognizer(pan)
+
+        let scroll = UIPanGestureRecognizer(target: self, action: #selector(handleScroll(_:)))
+        scroll.minimumNumberOfTouches = 2
+        scroll.maximumNumberOfTouches = 2
+        addGestureRecognizer(scroll)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -97,11 +116,47 @@ final class AbsoluteTouchView: UIView {
         }
     }
 
-    @objc private func handleLongPress(_ g: UILongPressGestureRecognizer) {
-        guard g.state == .began else { return }
+    @objc private func handleDoubleTap(_ g: UITapGestureRecognizer) {
+        guard g.state == .ended else { return }
         if moveCursor(to: g.location(in: self), force: true) {
-            NetworkManager.shared.sendClick(button: "right")
+            NetworkManager.shared.sendClick(button: "left", count: 2)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
+    /// Hold in place → right click on release. Hold then move → drag with the
+    /// left button (move windows, select text, drag files).
+    @objc private func handleLongPress(_ g: UILongPressGestureRecognizer) {
+        let point = g.location(in: self)
+        switch g.state {
+        case .began:
+            guard moveCursor(to: point, force: true) else { return }
+            holdIsDragging = false
+            holdStartPoint = point
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        case .changed:
+            guard let dragging = holdIsDragging else { return }
+            if !dragging {
+                let dx = point.x - holdStartPoint.x, dy = point.y - holdStartPoint.y
+                guard dx * dx + dy * dy > 144 else { return }  // 12 pt of slack before committing to a drag
+                holdIsDragging = true
+                _ = moveCursor(to: holdStartPoint, force: true)
+                NetworkManager.shared.sendMouseDown(button: "left")
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            }
+            _ = moveCursor(to: point)
+        case .ended, .cancelled, .failed:
+            guard let dragging = holdIsDragging else { return }
+            holdIsDragging = nil
+            if dragging {
+                _ = moveCursor(to: point, force: true)
+                NetworkManager.shared.sendMouseUp(button: "left")
+            } else if g.state == .ended {
+                NetworkManager.shared.sendClick(button: "right")
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+        default:
+            break
         }
     }
 
@@ -109,6 +164,24 @@ final class AbsoluteTouchView: UIView {
         switch g.state {
         case .began, .changed:
             _ = moveCursor(to: g.location(in: self))
+        default:
+            break
+        }
+    }
+
+    @objc private func handleScroll(_ g: UIPanGestureRecognizer) {
+        let point = g.location(in: self)
+        switch g.state {
+        case .began:
+            lastScrollPoint = point
+        case .changed:
+            var dx = Double(point.x - lastScrollPoint.x)
+            var dy = Double(point.y - lastScrollPoint.y)
+            lastScrollPoint = point
+            // Same setting the trackpad uses; unset means the AppStorage default (true).
+            let natural = UserDefaults.standard.object(forKey: "naturalScroll") as? Bool ?? true
+            if !natural { dx = -dx; dy = -dy }
+            NetworkManager.shared.sendScroll(dx: dx * 2, dy: dy * 2)
         default:
             break
         }

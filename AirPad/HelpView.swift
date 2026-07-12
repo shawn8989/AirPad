@@ -48,6 +48,8 @@ struct HelpView: View {
                 helpRow("Keyboard: type text, use modifier keys (⌘⌥⌃⇧) and special keys.")
                 helpRow("Apps: launch or focus Mac apps and switch desktops/windows.")
                 helpRow("Live Screen: watch the Mac's screen live with adjustable quality; use pointer mode to control what you see.")
+                helpRow("Live Screen Touch mode: tap to click exactly what you see, double-tap to open, two fingers to scroll, hold then move to drag, hold and release in place to right-click.")
+                helpRow("The keyboard rises automatically when a text field takes focus on the Mac (toggle in Settings).")
             }
 
             Section("Privacy & Security") {

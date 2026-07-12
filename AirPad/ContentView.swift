@@ -14,8 +14,9 @@ import Combine
 struct ContentView: View {
     @ObservedObject private var network = NetworkManager.shared
     @ObservedObject private var proStore = ProStore.shared
-    @State private var showKeyboard = false
     @State private var showMultiMacPaywall = false
+    @ObservedObject private var keyboard = KeyboardPresenter.shared
+    @AppStorage("autoKeyboard") private var autoKeyboard = true
     @Environment(\.requestReview) private var requestReview
     @AppStorage("connectSessionCount") private var connectSessionCount = 0
     @AppStorage("didAskForReview") private var didAskForReview = false
@@ -24,7 +25,7 @@ struct ContentView: View {
         NavigationStack {
             Group {
                 if network.isConnected {
-                    MainControlView(showKeyboard: $showKeyboard)
+                    MainControlView(showKeyboard: $keyboard.visible)
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
                                 Menu {
@@ -82,9 +83,17 @@ struct ContentView: View {
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = network.isConnected
         }
-        .sheet(isPresented: $showKeyboard) {
-            KeyboardView()
-                .presentationDetents([.medium, .large])
+        // The app's single remote keyboard (system keyboard + ⌘⌥⌃⇧ accessory
+        // bar), hosted once at the root so every screen — trackpad or Live
+        // Screen — shares it. Replaces the old custom keyboard sheet.
+        .overlay(alignment: .bottom) {
+            RemoteKeyboardInput(isVisible: $keyboard.visible, state: keyboard.state)
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+        }
+        .onReceive(network.$macTextFieldFocused) { focused in
+            // The Mac says a text field took keyboard focus: raise ours.
+            if autoKeyboard && focused && network.isConnected { keyboard.visible = true }
         }
     }
 }
