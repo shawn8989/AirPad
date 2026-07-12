@@ -42,7 +42,38 @@ final class AirPopEngine: ObservableObject {
 
     enum Phase { case menu, playing, gameOver }
 
+    /// Gesture powers: every ability is triggered by one of the SAME poses
+    /// Hand Mouse uses, so a round of AirPop doubles as gesture practice.
+    enum Power: CaseIterable {
+        case shockwave   // palm hold: pop all normal bubbles
+        case freeze      // fist hold: bubbles stop aging for 3s
+        case extraTime   // thumbs-up hold: +3s on the clock
+        case goldenRush  // shaka hold: 5s of fast, mostly golden spawns
+        case starShower  // YOUR recorded gesture (Gesture Studio): 3 golden bubbles
+
+        var cooldown: TimeInterval {
+            switch self {
+            case .shockwave: return 10
+            case .freeze: return 12
+            case .extraTime: return 15
+            case .goldenRush: return 20
+            case .starShower: return 12
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .shockwave: return "hand.raised.fill"
+            case .freeze: return "snowflake"
+            case .extraTime: return "hand.thumbsup.fill"
+            case .goldenRush: return "sparkles"
+            case .starShower: return "wand.and.stars"
+            }
+        }
+    }
+
     let tracker = HandTracker()
+    private let recognizer = HandGestureRecognizer()
 
     @Published var phase: Phase = .menu
     @Published var cursor: CGPoint?          // normalized, smoothed
@@ -58,6 +89,13 @@ final class AirPopEngine: ObservableObject {
     @Published var bombFlash = false
     @Published var isNewBest = false
     @Published var now: TimeInterval = CACurrentMediaTime()  // drives shrink animation
+    @Published var pose: HandPose = .none
+    @Published var readyAt: [Power: TimeInterval] = [:]      // cooldown ends
+    @Published var frozenUntil: TimeInterval = 0
+    @Published var rushUntil: TimeInterval = 0
+
+    /// Whether the player has any Gesture Studio recordings (enables Star Shower).
+    let hasCustomGestures = !GestureStore.shared.enabledTemplates.isEmpty
 
     @AppStorage("airpop.best") var best = 0
 
@@ -67,11 +105,36 @@ final class AirPopEngine: ObservableObject {
     private var endsAt: TimeInterval = 0
     private var lastPopAt: TimeInterval = 0
     private var lastTickSecond = -1
+    private var poseSince: TimeInterval = 0
     private var ticker: AnyCancellable?
 
     init() {
         tracker.onPermission = { [weak self] granted in self?.permissionDenied = !granted }
         tracker.onFrame = { [weak self] hand in self?.process(hand) }
+
+        // The recognizer only feeds us pose changes and Gesture Studio matches;
+        // its built-in gesture EVENTS (palm swipe, scroll...) are disabled so
+        // the game owns what each pose means.
+        var cfg = HandGestureConfig()
+        cfg.palmSwipeEnabled = false
+        cfg.palmHoldEnabled = false
+        cfg.scrollEnabled = false
+        cfg.fistDragEnabled = false
+        cfg.thumbsUpEnabled = false
+        cfg.shakaEnabled = false
+        cfg.customTemplates = GestureStore.shared.enabledTemplates
+        recognizer.config = cfg
+        recognizer.onPoseChanged = { [weak self] pose in
+            DispatchQueue.main.async {
+                self?.pose = pose
+                self?.poseSince = CACurrentMediaTime()
+            }
+        }
+        recognizer.onEvent = { [weak self] event in
+            if case .custom = event {
+                DispatchQueue.main.async { self?.firePower(.starShower) }
+            }
+        }
     }
 
     func startCamera() {
@@ -98,6 +161,9 @@ final class AirPopEngine: ObservableObject {
         lastSpawn = 0
         lastPopAt = 0
         lastTickSecond = -1
+        readyAt = [:]
+        frozenUntil = 0
+        rushUntil = 0
         phase = .playing
         AirPopSounds.shared.play(.pop)
         ticker?.cancel()
@@ -131,17 +197,53 @@ final class AirPopEngine: ObservableObject {
             return
         }
 
-        bubbles.removeAll { t - $0.bornAt > $0.lifetime }
         floaters.removeAll { t - $0.bornAt > 0.8 }
 
-        // Spawn faster as the round progresses.
+        // Held gesture powers: a pose held ~0.6s fires its ability (and will
+        // fire the moment its cooldown ends if the player keeps holding).
+        if pose != .none && t - poseSince > 0.6 {
+            switch pose {
+            case .palm: firePower(.shockwave)
+            case .fist: firePower(.freeze)
+            case .thumbsUp: firePower(.extraTime)
+            case .shaka: firePower(.goldenRush)
+            default: break
+            }
+        }
+
+        // FREEZE: shift every bubble's birth time forward so lifetimes (and
+        // the shrink animation) pause; spawning pauses with them.
+        let frozen = t < frozenUntil
+        if frozen {
+            let dt = 1.0 / 30.0
+            for i in bubbles.indices { bubbles[i].bornAt += dt }
+            lastSpawn += dt
+        }
+
+        // MAGNET: while holding the V-sign, bubbles drift toward the cursor —
+        // except bombs, which know better.
+        if pose == .scroll, let target = cursor {
+            for i in bubbles.indices where bubbles[i].kind != .bomb {
+                bubbles[i].position.x += (target.x - bubbles[i].position.x) * 0.05
+                bubbles[i].position.y += (target.y - bubbles[i].position.y) * 0.05
+            }
+        }
+
+        bubbles.removeAll { t - $0.bornAt > $0.lifetime }
+
+        // Spawn faster as the round progresses; Golden Rush doubles the pace
+        // and flips the odds toward golden.
         let elapsed = 45.0 - (endsAt - t)
-        let interval = max(0.4, 0.95 - elapsed / 60.0)
-        if t - lastSpawn > interval && bubbles.count < 7 {
+        let rushing = t < rushUntil
+        var interval = max(0.4, 0.95 - elapsed / 60.0)
+        if rushing { interval *= 0.5 }
+        if !frozen && t - lastSpawn > interval && bubbles.count < (rushing ? 9 : 7) {
             lastSpawn = t
             let roll = Double.random(in: 0...1)
             let kind: BubbleKind
-            if roll < 0.10 { kind = .golden }
+            if rushing {
+                kind = roll < 0.55 ? .golden : .normal  // no bombs during a rush
+            } else if roll < 0.10 { kind = .golden }
             else if roll < 0.26 && elapsed > 8 { kind = .bomb }  // bombs join after a warm-up
             else { kind = .normal }
             bubbles.append(Bubble(
@@ -153,9 +255,63 @@ final class AirPopEngine: ObservableObject {
         }
     }
 
+    // MARK: - Gesture powers
+
+    private func firePower(_ power: Power) {
+        guard phase == .playing else { return }
+        if power == .starShower && !hasCustomGestures { return }
+        let t = CACurrentMediaTime()
+        guard t >= (readyAt[power] ?? 0) else { return }
+        readyAt[power] = t + power.cooldown
+
+        switch power {
+        case .shockwave:
+            let victims = bubbles.filter { $0.kind == .normal }
+            guard !victims.isEmpty else { readyAt[power] = t + 1; return }  // don't waste it on nothing
+            bubbles.removeAll { $0.kind == .normal }
+            for v in victims { spawnBurst(at: v.position, color: .cyan) }
+            score += victims.count
+            addFloater("✋ POP! +\(victims.count)", at: CGPoint(x: 0.5, y: 0.42), color: .cyan)
+            AirPopSounds.shared.play(.pop)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+
+        case .freeze:
+            frozenUntil = t + 3
+            addFloater("✊ FREEZE", at: CGPoint(x: 0.5, y: 0.42), color: .cyan)
+            AirPopSounds.shared.play(.golden)
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+
+        case .extraTime:
+            endsAt += 3
+            addFloater("👍 +3s", at: CGPoint(x: 0.5, y: 0.42), color: .green)
+            AirPopSounds.shared.play(.golden)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        case .goldenRush:
+            rushUntil = t + 5
+            addFloater("🤙 GOLDEN RUSH", at: CGPoint(x: 0.5, y: 0.42), color: .yellow)
+            AirPopSounds.shared.play(.newBest)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+
+        case .starShower:
+            for _ in 0..<3 {
+                bubbles.append(Bubble(
+                    kind: .golden,
+                    position: CGPoint(x: .random(in: 0.15...0.85), y: .random(in: 0.18...0.75)),
+                    bornAt: t,
+                    lifetime: 2.2,
+                    radius: .random(in: 0.05...0.065)))
+            }
+            addFloater("⭐ STAR SHOWER", at: CGPoint(x: 0.5, y: 0.42), color: .yellow)
+            AirPopSounds.shared.play(.newBest)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        }
+    }
+
     // MARK: - Hand processing (camera queue -> main)
 
     private func process(_ hand: VNHumanHandPoseObservation?) {
+        recognizer.process(hand)  // pose classification + Gesture Studio matching
         guard let hand,
               let wrist = try? hand.recognizedPoint(.wrist), wrist.confidence > 0.2,
               let midMCP = try? hand.recognizedPoint(.middleMCP), midMCP.confidence > 0.3 else {
@@ -279,6 +435,12 @@ struct AirPopGameView: View {
                     .animation(.easeOut(duration: 0.25), value: engine.bombFlash)
                     .allowsHitTesting(false)
 
+                // Freeze: icy tint while time is stopped.
+                Color.cyan.opacity(engine.now < engine.frozenUntil ? 0.16 : 0)
+                    .ignoresSafeArea()
+                    .animation(.easeInOut(duration: 0.3), value: engine.now < engine.frozenUntil)
+                    .allowsHitTesting(false)
+
                 // Bubbles
                 ForEach(engine.bubbles) { bubble in
                     let d = bubble.radius * 2 * min(geo.size.width, geo.size.height)
@@ -347,13 +509,28 @@ struct AirPopGameView: View {
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding()
                     .animation(.snappy(duration: 0.15), value: engine.combo)
+
+                    // Live pose readout — the "trainer" feedback loop.
+                    if engine.phase == .playing && engine.pose != .none && engine.pose != .pointer {
+                        Text(engine.pose.rawValue)
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .transition(.opacity)
+                    }
+
                     Spacer()
                     if !engine.handVisible && engine.phase == .playing {
                         Text("Show your hand to the camera")
                             .font(.subheadline.weight(.semibold))
                             .padding(10)
                             .background(.ultraThinMaterial, in: Capsule())
-                            .padding(.bottom, 30)
+                            .padding(.bottom, 8)
+                    }
+                    if engine.phase == .playing {
+                        AbilityBar(engine: engine)
+                            .padding(.bottom, 24)
                     }
                 }
 
@@ -387,6 +564,24 @@ struct AirPopGameView: View {
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
+
+                        // Gesture powers legend — the same poses Hand Mouse uses.
+                        VStack(alignment: .leading, spacing: 5) {
+                            legendRow("✋ Palm (hold)", "Shockwave — pop every blue bubble")
+                            legendRow("✊ Fist (hold)", "Freeze — bubbles stop for 3s")
+                            legendRow("✌️ V-sign (hold it)", "Magnet — bubbles drift to you")
+                            legendRow("👍 Thumbs up", "+3 seconds")
+                            legendRow("🤙 Shaka", "Golden Rush — 5s of gold")
+                            if engine.hasCustomGestures {
+                                legendRow("⭐ Your gesture", "Star Shower — 3 golden bubbles")
+                            } else {
+                                Text("Record a gesture in Gesture Studio to unlock ⭐ Star Shower!")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .font(.caption)
+                        .padding(.top, 2)
                         Button {
                             engine.startGame()
                         } label: {
@@ -416,6 +611,53 @@ struct AirPopGameView: View {
             engine.startCamera()
         }
         .onDisappear { engine.stopCamera() }
+    }
+
+    private func legendRow(_ gesture: String, _ effect: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(gesture).frame(width: 128, alignment: .leading)
+            Text(effect).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Bottom HUD row: one chip per gesture power — lit when ready, dimmed with a
+/// countdown while cooling down, pulsing while its effect is active.
+private struct AbilityBar: View {
+    @ObservedObject var engine: AirPopEngine
+
+    var body: some View {
+        HStack(spacing: 14) {
+            chip(.shockwave, active: false)
+            chip(.freeze, active: engine.now < engine.frozenUntil)
+            chip(.extraTime, active: false)
+            chip(.goldenRush, active: engine.now < engine.rushUntil)
+            if engine.hasCustomGestures {
+                chip(.starShower, active: false)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private func chip(_ power: AirPopEngine.Power, active: Bool) -> some View {
+        let remaining = max(0, (engine.readyAt[power] ?? 0) - engine.now)
+        return ZStack {
+            Image(systemName: power.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(active ? .yellow : (remaining > 0 ? .gray : .white))
+                .opacity(remaining > 0 ? 0.45 : 1)
+            if remaining > 0 {
+                Text("\(Int(ceil(remaining)))")
+                    .font(.caption2.bold().monospacedDigit())
+                    .foregroundStyle(.white)
+                    .offset(y: 1)
+            }
+        }
+        .frame(width: 30, height: 30)
+        .scaleEffect(active ? 1.2 : 1)
+        .animation(.snappy(duration: 0.2), value: active)
     }
 }
 
