@@ -72,6 +72,8 @@ final class NetworkManager: ObservableObject {
     // True while the Mac reports keyboard focus is in a text field (drives
     // the auto keyboard popup). Set by the "text_focus" message.
     @Published var macTextFieldFocused = false
+    // Composite miniatures of each Mac desktop, keyed by desktop (Space) id.
+    @Published var desktopPreviews: [String: UIImage] = [:]
     // Non-nil when the Mac reported a streaming problem (e.g. missing
     // Screen Recording permission).
     @Published var streamErrorReason: String?
@@ -764,6 +766,16 @@ final class NetworkManager: ObservableObject {
                         cont.resume(returning: image)
                         windowThumbnailContinuations.removeValue(forKey: windowID)
                     }
+                }
+
+            case "desktop_preview":
+                // Streamed composite miniature of one desktop (Space).
+                if let payload = obj?["payload"] as? [String: Any],
+                   let desktopID = payload["id"] as? String,
+                   let b64 = payload["data"] as? String,
+                   let data = Data(base64Encoded: b64),
+                   let image = UIImage(data: data) {
+                    DispatchQueue.main.async { self.desktopPreviews[desktopID] = image }
                 }
 
             case "open_windows":

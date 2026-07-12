@@ -30,6 +30,13 @@ enum MacKeyMap {
     static func code(for character: Character) -> UInt16? {
         codes[Character(character.lowercased())]
     }
+
+    /// Characters produced by Shift + a base key (US layout).
+    static let shifted: [Character: UInt16] = [
+        "!": 18, "@": 19, "#": 20, "$": 21, "%": 23, "^": 22, "&": 26,
+        "*": 28, "(": 25, ")": 29, "_": 27, "+": 24, "{": 33, "}": 30,
+        "|": 42, ":": 41, "\"": 39, "<": 43, ">": 47, "?": 44, "~": 50
+    ]
 }
 
 /// Shared state between the hidden input and the accessory bar.
@@ -116,12 +123,28 @@ struct RemoteKeyboardInput: UIViewRepresentable {
                 state.sendKey(36)  // Return
                 return
             }
-            if state.anyModifier, text.count == 1,
-               let code = MacKeyMap.code(for: text.first!) {
-                state.sendKey(code)  // e.g. ⌘C as a real key combo
-                return
+            if let ch = text.first, text.count == 1 {
+                if state.anyModifier, let code = MacKeyMap.code(for: ch) {
+                    state.sendKey(code)  // e.g. ⌘C as a real key combo
+                    return
+                }
+                // Prefer real key events over unicode type_text: they behave
+                // like a physical keyboard in every app (shortcuts, games,
+                // terminals) and can't be corrupted by modifier state.
+                if let code = MacKeyMap.codes[ch] {
+                    NetworkManager.shared.sendKeyCombo(code)
+                    return
+                }
+                if ch.isUppercase, let code = MacKeyMap.code(for: ch) {
+                    NetworkManager.shared.sendKeyCombo(code, shift: true)
+                    return
+                }
+                if let code = MacKeyMap.shifted[ch] {
+                    NetworkManager.shared.sendKeyCombo(code, shift: true)
+                    return
+                }
             }
-            NetworkManager.shared.sendTypeText(text)
+            NetworkManager.shared.sendTypeText(text)  // emoji, accents, paste
         }
 
         override func deleteBackward() {

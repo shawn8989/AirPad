@@ -24,6 +24,12 @@ extension NetworkManager {
         try? send(type: "open_url", payload: ["url": url])
     }
 
+    /// Ask the Mac to composite + stream previews of every desktop; results
+    /// arrive as "desktop_preview" messages into `desktopPreviews`.
+    func requestDesktopPreviews(maxWidth: Int = 280) {
+        try? send(type: "request_desktop_previews", payload: ["maxWidth": maxWidth])
+    }
+
     func sendQuitApp(bundleIdentifier: String) {
         try? send(type: "quit_app", payload: ["bundleIdentifier": bundleIdentifier])
     }

@@ -18,6 +18,7 @@ struct MacSwitcherView: View {
         var windows: [MacWindowInfo]
     }
 
+    @ObservedObject private var network = NetworkManager.shared
     @State private var desktops: [MacDesktopInfo] = []
     @State private var groups: [AppGroup] = []
     @State private var icons: [String: UIImage] = [:]
@@ -42,10 +43,20 @@ struct MacSwitcherView: View {
                             desktopCard(desktop)
                         }
                         if desktops.count < 2 {
-                            Text("Add desktops in Mission Control on the Mac to switch between them here.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 200)
+                            if loading {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text("Loading desktops…")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(width: 160, height: 82)
+                            } else {
+                                Text("Add desktops in Mission Control on the Mac to switch between them here.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 200)
+                            }
                         }
                     }
                     .padding(.vertical, 2)
@@ -114,22 +125,46 @@ struct MacSwitcherView: View {
         } label: {
             VStack(spacing: 6) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(desktop.isActive ? Color.accentColor.opacity(0.22) : Color(.secondarySystemBackground))
-                        .frame(width: 92, height: 58)
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(desktop.isActive ? Color.accentColor : Color.secondary.opacity(0.25),
-                                      lineWidth: desktop.isActive ? 2 : 1)
-                        .frame(width: 92, height: 58)
-                    VStack(spacing: 2) {
-                        Image(systemName: "display")
-                            .foregroundStyle(desktop.isActive ? Color.accentColor : .secondary)
+                    // Live preview composited on the Mac; placeholder until it streams in.
+                    if let preview = network.desktopPreviews[desktop.id] {
+                        Image(uiImage: preview)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 132, height: 82)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         if windowCount > 0 {
-                            Text("\(windowCount) app\(windowCount == 1 ? "" : "s")")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            VStack {
+                                Spacer()
+                                HStack {
+                                    Spacer()
+                                    Text("\(windowCount)")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .padding(4)
+                                }
+                            }
+                            .frame(width: 132, height: 82)
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(desktop.isActive ? Color.accentColor.opacity(0.22) : Color(.secondarySystemBackground))
+                            .frame(width: 132, height: 82)
+                        VStack(spacing: 2) {
+                            Image(systemName: "display")
+                                .foregroundStyle(desktop.isActive ? Color.accentColor : .secondary)
+                            if windowCount > 0 {
+                                Text("\(windowCount) app\(windowCount == 1 ? "" : "s")")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(desktop.isActive ? Color.accentColor : Color.secondary.opacity(0.25),
+                                      lineWidth: desktop.isActive ? 2.5 : 1)
+                        .frame(width: 132, height: 82)
                 }
                 Text(desktop.name ?? "Desktop \(desktop.index)")
                     .font(.caption.weight(desktop.isActive ? .semibold : .regular))
@@ -249,9 +284,25 @@ struct MacSwitcherView: View {
         defer { loading = false }
         async let desktopsTask = try? NetworkManager.shared.requestDesktops()
         async let windowsTask = try? NetworkManager.shared.requestOpenWindows()
-        let (fetchedDesktops, fetchedWindows) = await (desktopsTask, windowsTask)
+        var (fetchedDesktops, fetchedWindows) = await (desktopsTask, windowsTask)
+
+        // The Spaces list is occasionally empty/stale right after connecting —
+        // retry a few times before believing "there's only one desktop", so the
+        // user isn't told to go add desktops that already exist.
+        var attempts = 0
+        while (fetchedDesktops?.count ?? 0) <= 1 && attempts < 3 && !Task.isCancelled {
+            attempts += 1
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if let retried = try? await NetworkManager.shared.requestDesktops(),
+               retried.count > (fetchedDesktops?.count ?? 0) {
+                fetchedDesktops = retried
+            }
+        }
 
         if let fetchedDesktops { desktops = fetchedDesktops }
+        // Kick off preview rendering on the Mac; images stream in as
+        // desktop_preview messages and land in network.desktopPreviews.
+        NetworkManager.shared.requestDesktopPreviews()
 
         guard let windows = fetchedWindows else { return }
         // Keep only real, user-relevant windows: named apps, not system agents,

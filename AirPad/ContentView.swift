@@ -173,43 +173,58 @@ struct ConnectionView: View {
                 }
             }
 
-            HStack {
+            // Bottom bar: one prominent primary action, then evenly spaced
+            // icon-over-caption buttons (a row of full Labels doesn't fit an
+            // iPhone width and squishes).
+            VStack(spacing: 14) {
                 Button {
                     showQRScanner = true
                 } label: {
-                    Label("Scan QR", systemImage: "qrcode.viewfinder")
+                    Label("Scan Pairing QR", systemImage: "qrcode.viewfinder")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button {
-                    network.startBrowsing()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                HStack {
+                    Spacer()
+                    Button { network.startBrowsing() } label: {
+                        bottomBarLabel("Refresh", "arrow.clockwise")
+                    }
+                    Spacer()
+                    NavigationLink(destination: HelpView()) {
+                        bottomBarLabel("Help", "questionmark.circle")
+                    }
+                    Spacer()
+                    #if DEBUG
+                    NavigationLink(destination: DebugLogView()) {
+                        bottomBarLabel("Debug", "ladybug")
+                    }
+                    Spacer()
+                    #endif
+                    Button(role: .destructive) {
+                        NetworkManager.shared.resetTrust()
+                    } label: {
+                        bottomBarLabel("Forget", "trash")
+                    }
+                    Spacer()
                 }
-
-                Spacer()
-
-                NavigationLink(destination: HelpView()) {
-                    Label("Help", systemImage: "questionmark.circle")
-                }
-
-                #if DEBUG
-                NavigationLink(destination: DebugLogView()) {
-                    Label("Debug", systemImage: "ladybug.fill")
-                }
-                #endif
-
-                Button(role: .destructive) {
-                    NetworkManager.shared.resetTrust()
-                } label: {
-                    Label("Forget", systemImage: "trash")
-                }
+                .foregroundStyle(.secondary)
             }
-            .lineLimit(1)
             .padding(.horizontal)
         }
         .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
         .onAppear { network.startBrowsing() }
+    }
+
+    private func bottomBarLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+            Text(title)
+                .font(.caption2)
+        }
+        .frame(minWidth: 44)
     }
 }
 

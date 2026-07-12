@@ -97,15 +97,12 @@ enum GestureAction: Codable, Equatable, Hashable {
         let net = NetworkManager.shared
         switch self {
         case .keyChord(_, let keyCode, let command, let option, let control, let shift):
-            var modifiers: [UInt16] = []
-            if command { modifiers.append(55) }
-            if option { modifiers.append(58) }
-            if control { modifiers.append(59) }
-            if shift { modifiers.append(56) }
-            for m in modifiers { net.sendKeyDown(keyCode: m) }
-            net.sendKeyDown(keyCode: keyCode)
-            net.sendKeyUp(keyCode: keyCode)
-            for m in modifiers.reversed() { net.sendKeyUp(keyCode: m) }
+            // One atomic key_combo: modifier flags ride on the event itself.
+            // (The old separate modifier key_down/key_up sequence could latch
+            // a modifier forever if one packet was lost, which then corrupted
+            // ALL later input — typed text became silent ⌘-shortcuts.)
+            net.sendKeyCombo(keyCode, command: command, option: option,
+                             control: control, shift: shift)
         case .media(_, let action):
             net.sendMedia(action: action)
         case .desktopLeft:
