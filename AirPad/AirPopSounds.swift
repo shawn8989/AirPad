@@ -103,6 +103,9 @@ final class AirPopSounds {
         guard started else { return }
         engine.stop()
         started = false
+        // Hand the audio session back: leaving it active starves the mic and
+        // silently breaks Dictation after a round of AirPop.
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func play(_ effect: Effect) {

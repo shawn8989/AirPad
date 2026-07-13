@@ -251,6 +251,40 @@ struct AirMouseView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal)
+
+            // Keyboard + desktop switching without leaving Air Mouse — key for
+            // presentations (type a search, hop between full-screen apps).
+            HStack {
+                Button {
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+                } label: {
+                    Label("Desktop", systemImage: "chevron.left")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    KeyboardPresenter.shared.visible = true
+                } label: {
+                    Label("Keyboard", systemImage: "keyboard")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                    if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+                } label: {
+                    HStack {
+                        Text("Desktop")
+                        Image(systemName: "chevron.right")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal)
         }
         .padding(.vertical)
         .navigationTitle("Air Mouse")

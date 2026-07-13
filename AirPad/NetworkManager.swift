@@ -440,8 +440,13 @@ final class NetworkManager: ObservableObject {
 
     func disconnect() {
         stopHeartbeat()
-        connection?.cancel()
+        // Tell the Mac we're leaving so it releases input state and updates
+        // its dashboard IMMEDIATELY, instead of waiting for the socket to die.
+        try? send(type: "bye", payload: [:])
+        let dying = connection
         connection = nil
+        // Give the bye a moment on the wire before killing the socket.
+        queue.asyncAfter(deadline: .now() + 0.25) { dying?.cancel() }
         lastService = nil // user-initiated disconnect disables auto-reconnect
         reconnectTimer?.cancel()
         reconnectTimer = nil
