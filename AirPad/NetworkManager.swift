@@ -238,17 +238,25 @@ final class NetworkManager: ObservableObject {
     // MARK: - Bonjour Browsing
     func startBrowsing() {
         log("Browsing for Bonjour services: \(serviceType)")
+        // A backgrounded browser comes back wedged: it stays "running" but
+        // never reports results again. Always start from a fresh one.
+        browser?.cancel()
         discoveredServices.removeAll()
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = true
         let browser = NWBrowser(for: .bonjour(type: serviceType, domain: nil), using: parameters)
         self.browser = browser
-        browser.stateUpdateHandler = { [weak self] state in
+        browser.stateUpdateHandler = { [weak self, weak browser] state in
             guard let self = self else { return }
             switch state {
             case .failed(let error):
                 DispatchQueue.main.async { self.lastErrorMessage = "Browse failed: \(self.friendlyError(error))" }
-                self.log("Browser failed: \(error)")
+                self.log("Browser failed: \(error) — restarting in 1.5s")
+                self.queue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    // Only restart if this failed browser is still the current one.
+                    guard let self, self.browser === browser else { return }
+                    DispatchQueue.main.async { self.startBrowsing() }
+                }
             default: break
             }
         }

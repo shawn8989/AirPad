@@ -95,6 +95,11 @@ struct ContentView: View {
             // The Mac says a text field took keyboard focus: raise ours.
             if autoKeyboard && focused && network.isConnected { keyboard.visible = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            // Coming back from the background: the old Bonjour browser is
+            // wedged and never finds anything again — rescan fresh.
+            if !network.isConnected { network.startBrowsing() }
+        }
     }
 }
 
