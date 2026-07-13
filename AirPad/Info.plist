@@ -24,6 +24,11 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
 
+    <!-- Only exempt encryption (TLS): skips the export-compliance question
+         on every App Store upload -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
     <!-- Launch screen: keep empty dict if using asset-based/default launch screen -->
     <key>UILaunchScreen</key>
     <dict/>

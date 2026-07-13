@@ -57,6 +57,11 @@ struct HelpView: View {
                 helpRow("Reset trust anytime with Forget Server, then re-pair.")
             }
 
+            Section("Away From Home (Pro)") {
+                helpRow("AirPad is designed for your own Wi-Fi, but Pro users can control their Mac from anywhere with a personal VPN like Tailscale (free): install it on the Mac and this device, then use Wake / IP → Connect by Address with the Mac's VPN address. AirBridge listens on port 52417.")
+                helpRow("Wake a sleeping Mac: the Wake / IP menu sends a wake-up signal to any Mac you've paired with. On the Mac, turn on System Settings → Battery → Options → \"Wake for network access\". Moving the trackpad also wakes a dark display.")
+            }
+
             Section("Troubleshooting") {
                 helpRow("Can't find the Mac? Same Wi-Fi network, AirBridge running, and Local Network permission allowed.")
                 helpRow("Desktop switching needs more than one desktop (Mission Control > +).")

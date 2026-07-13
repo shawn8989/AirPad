@@ -104,6 +104,7 @@ struct ConnectionView: View {
     @State private var searchPulse = false
     @State private var showQRScanner = false
     @State private var showAddressPrompt = false
+    @State private var showRemotePaywall = false
     @State private var manualAddress = ""
     @State private var wokeMacName: String?
 
@@ -211,7 +212,13 @@ struct ConnectionView: View {
                             }
                         }
                         Button {
-                            showAddressPrompt = true
+                            // Remote/VPN connectivity is a Pro nicety; the
+                            // trial unlocks it too (isPro covers both).
+                            if ProStore.shared.isPro {
+                                showAddressPrompt = true
+                            } else {
+                                showRemotePaywall = true
+                            }
                         } label: {
                             Label("Connect by Address…", systemImage: "network")
                         }
@@ -241,6 +248,9 @@ struct ConnectionView: View {
             .padding(.horizontal)
         }
         .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
+        .sheet(isPresented: $showRemotePaywall) {
+            NavigationStack { PaywallView() }
+        }
         .onAppear { network.startBrowsing() }
         .alert("Connect by Address", isPresented: $showAddressPrompt) {
             TextField("IP or hostname (e.g. 100.64.1.5)", text: $manualAddress)
