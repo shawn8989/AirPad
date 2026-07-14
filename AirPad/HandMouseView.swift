@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AVFoundation
 
 //
@@ -160,6 +161,20 @@ struct HandMouseView: View {
                     }
                     .overlay(alignment: .topTrailing) {
                         HStack(spacing: 8) {
+                            // Typing while hand-tracking: raise the remote
+                            // keyboard (dictation is the hands-free option).
+                            Button {
+                                KeyboardPresenter.shared.visible = true
+                            } label: {
+                                Image(systemName: "keyboard")
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
+                            NavigationLink(destination: AirPopGameView()) {
+                                Image(systemName: "gamecontroller")
+                                    .padding(8)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
                             NavigationLink(destination: GestureStudioView()) {
                                 Image(systemName: "wand.and.stars")
                                     .padding(8)

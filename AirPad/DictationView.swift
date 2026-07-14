@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Speech
 import AVFoundation
 
@@ -47,6 +48,8 @@ final class DictationController: NSObject, ObservableObject {
             return
         }
         do {
+            // AirPop's sound engine must not hold the session while we record.
+            AirPopSounds.shared.stop()
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)

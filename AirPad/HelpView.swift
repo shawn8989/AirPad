@@ -48,11 +48,18 @@ struct HelpView: View {
                 helpRow("Keyboard: type text, use modifier keys (⌘⌥⌃⇧) and special keys.")
                 helpRow("Apps: launch or focus Mac apps and switch desktops/windows.")
                 helpRow("Live Screen: watch the Mac's screen live with adjustable quality; use pointer mode to control what you see.")
+                helpRow("Live Screen Touch mode: tap to click exactly what you see, double-tap to open, two fingers to scroll, hold then move to drag, hold and release in place to right-click.")
+                helpRow("The keyboard rises automatically when a text field takes focus on the Mac (toggle in Settings).")
             }
 
             Section("Privacy & Security") {
                 helpRow("Traffic stays on your local network, encrypted with TLS. Every device is paired and authenticated per-Mac; the Mac only obeys authenticated devices.")
                 helpRow("Reset trust anytime with Forget Server, then re-pair.")
+            }
+
+            Section("Away From Home (Pro)") {
+                helpRow("AirPad is designed for your own Wi-Fi, but Pro users can control their Mac from anywhere with a personal VPN like Tailscale (free): install it on the Mac and this device, then use Wake / IP → Connect by Address with the Mac's VPN address. AirBridge listens on port 52417.")
+                helpRow("Wake a sleeping Mac: the Wake / IP menu sends a wake-up signal to any Mac you've paired with. On the Mac, turn on System Settings → Battery → Options → \"Wake for network access\". Moving the trackpad also wakes a dark display.")
             }
 
             Section("Troubleshooting") {

@@ -8,13 +8,15 @@
 import SwiftUI
 import UIKit
 import StoreKit
+import Combine
 
 // Root app view that navigates between Connection, Trackpad, and Keyboard screens.
 struct ContentView: View {
     @ObservedObject private var network = NetworkManager.shared
     @ObservedObject private var proStore = ProStore.shared
-    @State private var showKeyboard = false
     @State private var showMultiMacPaywall = false
+    @ObservedObject private var keyboard = KeyboardPresenter.shared
+    @AppStorage("autoKeyboard") private var autoKeyboard = true
     @Environment(\.requestReview) private var requestReview
     @AppStorage("connectSessionCount") private var connectSessionCount = 0
     @AppStorage("didAskForReview") private var didAskForReview = false
@@ -23,7 +25,7 @@ struct ContentView: View {
         NavigationStack {
             Group {
                 if network.isConnected {
-                    MainControlView(showKeyboard: $showKeyboard)
+                    MainControlView(showKeyboard: $keyboard.visible)
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
                                 Menu {
@@ -81,9 +83,22 @@ struct ContentView: View {
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = network.isConnected
         }
-        .sheet(isPresented: $showKeyboard) {
-            KeyboardView()
-                .presentationDetents([.medium, .large])
+        // The app's single remote keyboard (system keyboard + ⌘⌥⌃⇧ accessory
+        // bar), hosted once at the root so every screen — trackpad or Live
+        // Screen — shares it. Replaces the old custom keyboard sheet.
+        .overlay(alignment: .bottom) {
+            RemoteKeyboardInput(isVisible: $keyboard.visible, state: keyboard.state)
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+        }
+        .onReceive(network.$macTextFieldFocused) { focused in
+            // The Mac says a text field took keyboard focus: raise ours.
+            if autoKeyboard && focused && network.isConnected { keyboard.visible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            // Coming back from the background: the old Bonjour browser is
+            // wedged and never finds anything again — rescan fresh.
+            if !network.isConnected { network.startBrowsing() }
         }
     }
 }
@@ -93,6 +108,10 @@ struct ConnectionView: View {
     @ObservedObject private var network = NetworkManager.shared
     @State private var searchPulse = false
     @State private var showQRScanner = false
+    @State private var showAddressPrompt = false
+    @State private var showRemotePaywall = false
+    @State private var manualAddress = ""
+    @State private var wokeMacName: String?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -163,106 +182,205 @@ struct ConnectionView: View {
                 }
             }
 
-            HStack {
+            // Bottom bar: one prominent primary action, then evenly spaced
+            // icon-over-caption buttons (a row of full Labels doesn't fit an
+            // iPhone width and squishes).
+            VStack(spacing: 14) {
                 Button {
                     showQRScanner = true
                 } label: {
-                    Label("Scan QR", systemImage: "qrcode.viewfinder")
+                    Label("Scan Pairing QR", systemImage: "qrcode.viewfinder")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button {
-                    network.startBrowsing()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                HStack {
+                    Spacer()
+                    Button { network.startBrowsing() } label: {
+                        bottomBarLabel("Refresh", "arrow.clockwise")
+                    }
+                    Spacer()
+                    Menu {
+                        let known = KnownMacStore.all().filter { $0.macAddress != nil }
+                        if !known.isEmpty {
+                            Section("Wake a sleeping Mac") {
+                                ForEach(known) { mac in
+                                    Button {
+                                        wokeMacName = mac.name
+                                        WakeOnLAN.wake(macAddress: mac.macAddress!)
+                                        network.startBrowsing()
+                                    } label: {
+                                        Label(mac.name, systemImage: "power")
+                                    }
+                                }
+                            }
+                        }
+                        Button {
+                            // Remote/VPN connectivity is a Pro nicety; the
+                            // trial unlocks it too (isPro covers both).
+                            if ProStore.shared.isPro {
+                                showAddressPrompt = true
+                            } else {
+                                showRemotePaywall = true
+                            }
+                        } label: {
+                            Label("Connect by Address…", systemImage: "network")
+                        }
+                    } label: {
+                        bottomBarLabel("Wake / IP", "power")
+                    }
+                    Spacer()
+                    NavigationLink(destination: HelpView()) {
+                        bottomBarLabel("Help", "questionmark.circle")
+                    }
+                    Spacer()
+                    #if DEBUG
+                    NavigationLink(destination: DebugLogView()) {
+                        bottomBarLabel("Debug", "ladybug")
+                    }
+                    Spacer()
+                    #endif
+                    Button(role: .destructive) {
+                        NetworkManager.shared.resetTrust()
+                    } label: {
+                        bottomBarLabel("Forget", "trash")
+                    }
+                    Spacer()
                 }
-
-                Spacer()
-
-                NavigationLink(destination: HelpView()) {
-                    Label("Help", systemImage: "questionmark.circle")
-                }
-
-                #if DEBUG
-                NavigationLink(destination: DebugLogView()) {
-                    Label("Debug", systemImage: "ladybug.fill")
-                }
-                #endif
-
-                Button(role: .destructive) {
-                    NetworkManager.shared.resetTrust()
-                } label: {
-                    Label("Forget", systemImage: "trash")
-                }
+                .foregroundStyle(.secondary)
             }
-            .lineLimit(1)
             .padding(.horizontal)
         }
         .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
+        .sheet(isPresented: $showRemotePaywall) {
+            NavigationStack { PaywallView() }
+        }
         .onAppear { network.startBrowsing() }
+        .alert("Connect by Address", isPresented: $showAddressPrompt) {
+            TextField("IP or hostname (e.g. 100.64.1.5)", text: $manualAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Connect") {
+                var host = manualAddress
+                var port = NetworkManager.defaultPort
+                if let colon = host.lastIndex(of: ":"), let p = UInt16(host[host.index(after: colon)...]) {
+                    port = p
+                    host = String(host[..<colon])
+                }
+                network.connectToAddress(host, port: port)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. AirBridge listens on port \(String(NetworkManager.defaultPort)).")
+        }
+        .alert("Wake packet sent", isPresented: .init(
+            get: { wokeMacName != nil },
+            set: { if !$0 { wokeMacName = nil } })) {
+            Button("OK") { wokeMacName = nil }
+        } message: {
+            Text("Sent a Wake-on-LAN packet to \(wokeMacName ?? "the Mac"). It wakes only if \"Wake for network access\" is on (System Settings → Battery → Options) and the Mac is on this network. It may take a few seconds to appear.")
+        }
+    }
+
+    private func bottomBarLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+            Text(title)
+                .font(.caption2)
+        }
+        .frame(minWidth: 44)
     }
 }
 
-// Main control view: trackpad on top, one row of quick actions, then a grid
-// of modes/tools. Everything fits on screen — no horizontal overflow.
+// Main control view. iPhone: trackpad on top, quick actions, 4-column tile
+// grid. iPad / regular width: big trackpad beside a control column.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
     @ObservedObject private var proStore = ProStore.shared
-
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+    @Environment(\.horizontalSizeClass) private var hSize
 
     var body: some View {
-        VStack(spacing: 12) {
-            TrialBanner()
-                .padding(.top, 4)
+        if hSize == .regular {
+            // iPad: side-by-side — a large trackpad with controls on the right.
+            HStack(spacing: 14) {
+                trackpad
+                    .padding([.leading, .vertical])
 
-            TrackpadView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal)
-
-            // Quick actions
-            HStack(spacing: 10) {
-                Button {
-                    NetworkManager.shared.sendClick(button: "left")
-                } label: {
-                    Label("Click", systemImage: "cursorarrow.click")
-                        .frame(maxWidth: .infinity)
+                VStack(spacing: 12) {
+                    TrialBanner()
+                    quickActions
+                    tileGrid(columns: 2)
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.borderedProminent)
-
-                Button {
-                    NetworkManager.shared.sendClick(button: "right")
-                } label: {
-                    Label("Right Click", systemImage: "cursorarrow.rays")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    showKeyboard = true
-                } label: {
-                    Label("Keyboard", systemImage: "keyboard")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                .frame(width: 320)
+                .padding([.trailing, .vertical])
             }
-            .lineLimit(1)
-            .padding(.horizontal)
+        } else {
+            VStack(spacing: 12) {
+                TrialBanner()
+                    .padding(.top, 4)
 
-            // Modes & tools. Pro tiles route to the paywall once the trial ends.
-            LazyVGrid(columns: gridColumns, spacing: 10) {
-                modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
-                modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
-                modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
-                modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
-                modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
-                modeTile("Apps", "square.grid.2x2", pro: true) { AppShortcutsView() }
-                modeTile("Settings", "gearshape") { SettingsView() }
-                modeTile("Help", "questionmark.circle") { HelpView() }
+                trackpad
+                    .padding(.horizontal)
+
+                quickActions
+                    .padding(.horizontal)
+
+                tileGrid(columns: 4)
+                    .padding([.horizontal, .bottom])
             }
-            .padding([.horizontal, .bottom])
+        }
+    }
+
+    private var trackpad: some View {
+        TrackpadView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var quickActions: some View {
+        HStack(spacing: 10) {
+            Button {
+                NetworkManager.shared.sendClick(button: "left")
+            } label: {
+                Label("Click", systemImage: "cursorarrow.click")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                NetworkManager.shared.sendClick(button: "right")
+            } label: {
+                Label("Right Click", systemImage: "cursorarrow.rays")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                showKeyboard = true
+            } label: {
+                Label("Keyboard", systemImage: "keyboard")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .lineLimit(1)
+    }
+
+    // Modes & tools. Pro tiles route to the paywall once the trial ends.
+    private func tileGrid(columns: Int) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: columns), spacing: 10) {
+            modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
+            modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
+            modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
+            modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
+            modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
+            modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
+            modeTile("Settings", "gearshape") { SettingsView() }
+            modeTile("Help", "questionmark.circle") { HelpView() }
         }
     }
 
@@ -317,6 +435,15 @@ struct SettingsView: View {
             }
             Section("Haptics") {
                 Toggle("Haptic Feedback", isOn: $hapticsEnabled)
+            }
+            Section("Keyboard") {
+                Toggle("Auto keyboard in Live Screen", isOn: Binding(
+                    get: { UserDefaults.standard.object(forKey: "autoKeyboard") as? Bool ?? true },
+                    set: { UserDefaults.standard.set($0, forKey: "autoKeyboard") }
+                ))
+                Text("Pops the keyboard up automatically when you click into a text field on the Mac.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             Section("Trackpad") {
                 Toggle("Show Touch Indicators", isOn: $showTouches)

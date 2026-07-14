@@ -59,6 +59,25 @@ final class NetworkManager: ObservableObject {
     @Published var currentMacName: String?
     @Published var lastFetchedClipboard: String?
 
+    struct NowPlayingInfo: Equatable {
+        var playing: Bool
+        var title: String
+        var artist: String
+        var app: String
+        var volume: Int?
+        var muted: Bool
+    }
+    @Published var nowPlaying: NowPlayingInfo?
+
+    // True while the Mac reports keyboard focus is in a text field (drives
+    // the auto keyboard popup). Set by the "text_focus" message.
+    @Published var macTextFieldFocused = false
+    // Composite miniatures of each Mac desktop, keyed by desktop (Space) id.
+    @Published var desktopPreviews: [String: UIImage] = [:]
+    // Non-nil when the Mac reported a streaming problem (e.g. missing
+    // Screen Recording permission).
+    @Published var streamErrorReason: String?
+
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
     @Published var pushedDesktops: [MacDesktopInfo] = []
@@ -219,17 +238,25 @@ final class NetworkManager: ObservableObject {
     // MARK: - Bonjour Browsing
     func startBrowsing() {
         log("Browsing for Bonjour services: \(serviceType)")
+        // A backgrounded browser comes back wedged: it stays "running" but
+        // never reports results again. Always start from a fresh one.
+        browser?.cancel()
         discoveredServices.removeAll()
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = true
         let browser = NWBrowser(for: .bonjour(type: serviceType, domain: nil), using: parameters)
         self.browser = browser
-        browser.stateUpdateHandler = { [weak self] state in
+        browser.stateUpdateHandler = { [weak self, weak browser] state in
             guard let self = self else { return }
             switch state {
             case .failed(let error):
                 DispatchQueue.main.async { self.lastErrorMessage = "Browse failed: \(self.friendlyError(error))" }
-                self.log("Browser failed: \(error)")
+                self.log("Browser failed: \(error) — restarting in 1.5s")
+                self.queue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    // Only restart if this failed browser is still the current one.
+                    guard let self, self.browser === browser else { return }
+                    DispatchQueue.main.async { self.startBrowsing() }
+                }
             default: break
             }
         }
@@ -250,6 +277,19 @@ final class NetworkManager: ObservableObject {
             }
         }
         browser.start(queue: queue)
+    }
+
+    /// AirBridge's fixed listening port (it falls back to ephemeral only if taken).
+    static let defaultPort: UInt16 = 52417
+
+    /// Connect straight to a host (IP or DNS name) — for VPN/Tailscale setups
+    /// where Bonjour discovery can't cross networks. Pairing and encryption
+    /// work exactly as on the local network.
+    func connectToAddress(_ host: String, port: UInt16 = NetworkManager.defaultPort) {
+        let trimmed = host.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let nwPort = NWEndpoint.Port(rawValue: port) else { return }
+        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(trimmed), port: nwPort)
+        connect(to: DiscoveredService(name: trimmed, host: trimmed, port: Int(port), endpoint: endpoint))
     }
 
     // MARK: - Connect
@@ -408,8 +448,13 @@ final class NetworkManager: ObservableObject {
 
     func disconnect() {
         stopHeartbeat()
-        connection?.cancel()
+        // Tell the Mac we're leaving so it releases input state and updates
+        // its dashboard IMMEDIATELY, instead of waiting for the socket to die.
+        try? send(type: "bye", payload: [:])
+        let dying = connection
         connection = nil
+        // Give the bye a moment on the wire before killing the socket.
+        queue.asyncAfter(deadline: .now() + 0.25) { dying?.cancel() }
         lastService = nil // user-initiated disconnect disables auto-reconnect
         reconnectTimer?.cancel()
         reconnectTimer = nil
@@ -614,11 +659,39 @@ final class NetworkManager: ObservableObject {
                 if let payload = obj?["payload"] as? [String: Any], let macID = payload["macID"] as? String {
                     self.currentMacID = macID
                     let macName = payload["macName"] as? String
-                    DispatchQueue.main.async { self.currentMacName = macName }
+                    let macAddress = payload["macAddress"] as? String
+                    DispatchQueue.main.async {
+                        self.currentMacName = macName
+                        // Remember this Mac (name + hardware address) so the
+                        // connect screen can offer Wake-on-LAN later.
+                        KnownMacStore.upsert(id: macID, name: macName ?? "Mac", macAddress: macAddress)
+                    }
                 }
 
             case "pong":
                 self.lastPongAt = CACurrentMediaTime()
+
+            case "text_focus":
+                if let payload = obj?["payload"] as? [String: Any], let focused = payload["focused"] as? Bool {
+                    DispatchQueue.main.async { self.macTextFieldFocused = focused }
+                }
+
+            case "stream_error":
+                if let payload = obj?["payload"] as? [String: Any], let reason = payload["reason"] as? String {
+                    DispatchQueue.main.async { self.streamErrorReason = reason }
+                }
+
+            case "now_playing":
+                if let payload = obj?["payload"] as? [String: Any] {
+                    let info = NowPlayingInfo(
+                        playing: payload["playing"] as? Bool ?? false,
+                        title: payload["title"] as? String ?? "",
+                        artist: payload["artist"] as? String ?? "",
+                        app: payload["app"] as? String ?? "",
+                        volume: payload["volume"] as? Int,
+                        muted: payload["muted"] as? Bool ?? false)
+                    DispatchQueue.main.async { self.nowPlaying = info }
+                }
 
             case "pair_qr_ok":
                 // The Mac accepted our QR proof: store the derived per-Mac
@@ -725,6 +798,16 @@ final class NetworkManager: ObservableObject {
                         cont.resume(returning: image)
                         windowThumbnailContinuations.removeValue(forKey: windowID)
                     }
+                }
+
+            case "desktop_preview":
+                // Streamed composite miniature of one desktop (Space).
+                if let payload = obj?["payload"] as? [String: Any],
+                   let desktopID = payload["id"] as? String,
+                   let b64 = payload["data"] as? String,
+                   let data = Data(base64Encoded: b64),
+                   let image = UIImage(data: data) {
+                    DispatchQueue.main.async { self.desktopPreviews[desktopID] = image }
                 }
 
             case "open_windows":
@@ -907,8 +990,8 @@ final class NetworkManager: ObservableObject {
         }
     }
 
-    func sendClick(button: String = "left") {
-        try? send(type: "mouse_click", payload: ["button": button])
+    func sendClick(button: String = "left", count: Int = 1) {
+        try? send(type: "mouse_click", payload: ["button": button, "count": count])
         DispatchQueue.main.async { self.debugClickCount += 1 }
     }
 
@@ -936,6 +1019,33 @@ final class NetworkManager: ObservableObject {
     // Pinch -> zoom. zoomIn = true for pinch-out (zoom in), false for pinch-in.
     func sendPinch(zoomIn: Bool) {
         try? send(type: "pinch", payload: ["direction": zoomIn ? "in" : "out"])
+    }
+
+    // Absolute cursor position, normalized 0...1 on the Mac's main display
+    // (Live Screen "tap what you see").
+    func sendMouseMoveAbs(x: Double, y: Double) {
+        try? send(type: "mouse_move_abs", payload: ["x": x, "y": y])
+    }
+
+    // A key with explicit modifiers (accessory-bar shortcuts like ⌘C); the
+    // Mac applies the flags to the key events directly.
+    func sendKeyCombo(_ keyCode: UInt16, command: Bool = false, option: Bool = false,
+                      control: Bool = false, shift: Bool = false) {
+        try? send(type: "key_combo", payload: [
+            "keyCode": Int(keyCode),
+            "command": command, "option": option, "control": control, "shift": shift
+        ])
+    }
+
+    // Ask the Mac for the current track + system volume; reply arrives as
+    // "now_playing" and lands in the nowPlaying published property.
+    func requestNowPlaying() {
+        try? send(type: "now_playing_get", payload: [:])
+    }
+
+    // Set the Mac's output volume (0-100).
+    func sendSetVolume(_ level: Int) {
+        try? send(type: "set_volume", payload: ["level": max(0, min(100, level))])
     }
 
     // Media/system control: volume_up/down, mute, play_pause, next, previous,

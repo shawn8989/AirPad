@@ -14,14 +14,15 @@ struct LiveScreenView: View {
     @State private var fitMode: ContentMode = .fit
 
     // Control vs View (zoom/pan) mode
-    private enum ControlMode: String, CaseIterable, Identifiable { case pointer, view; var id: String { rawValue } }
+    fileprivate enum ControlMode: String, CaseIterable, Identifiable { case pointer, touch, view; var id: String { rawValue } }
     @State private var controlMode: ControlMode = .pointer
 
     // Fullscreen & overlays
 //    @State private var isFullscreen = false
     @State private var isFullscreen = UIDevice.current.userInterfaceIdiom == .phone
     @State private var showOverlays = true
-    @State private var showKeyboardSheet = false
+    @ObservedObject private var keyboard = KeyboardPresenter.shared
+    @State private var lastFrameAt = Date()
     @State private var showShortcuts = false
 
     // Zoom & pan (view mode)
@@ -39,8 +40,9 @@ struct LiveScreenView: View {
     @State private var overlayAutoHideWorkItem: DispatchWorkItem?
     @State private var dragLocked: Bool = false
 
-    // Auto-hide delay (seconds)
-    private let overlayAutoHideDelay: TimeInterval = 3.0
+    // Auto-hide delay (seconds). 3s proved too aggressive — the controls
+    // vanished before people found them.
+    private let overlayAutoHideDelay: TimeInterval = 8.0
 
     var body: some View {
         ZStack {
@@ -81,12 +83,28 @@ struct LiveScreenView: View {
                         Text("No frames yet")
                             .font(.headline)
                             .foregroundStyle(.secondary)
+                        if network.streamErrorReason == "screen_recording_permission" {
+                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable AirBridge, then relaunch AirBridge.")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        } else {
+                            Text("Retrying automatically…")
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     .padding()
                 }
 
                 TrackpadGestureBridgeOverlay(isActive: controlMode == .pointer)
+                AbsoluteTouchOverlay(isActive: controlMode == .touch,
+                                     imageSize: network.liveImage?.size,
+                                     fill: fitMode == .fill)
                 EdgeGestureZones(isActive: isFullscreen && controlMode == .pointer)
+                // The remote keyboard itself is hosted once at the root
+                // (ContentView) — this screen only toggles KeyboardPresenter.
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 16))
@@ -100,7 +118,9 @@ struct LiveScreenView: View {
                         withAnimation(.easeInOut(duration: 0.2)) { showOverlays.toggle() }
                         if showOverlays { scheduleOverlayAutoHide() } else { cancelOverlayAutoHide() }
                     }
-                    .allowsHitTesting(isFullscreen && controlMode != .pointer)
+                    // Only View mode uses tap-to-toggle-overlays; Pointer and
+                    // Touch modes need every tap for input.
+                    .allowsHitTesting(isFullscreen && controlMode == .view)
             )
 
             // Overlays
@@ -128,21 +148,23 @@ struct LiveScreenView: View {
             .opacity(isFullscreen ? 1 : 0)
             .zIndex(2)
 
-            // Hotspot to reveal overlays when hidden in fullscreen pointer mode
+            // Visible handle to bring the controls back when they've auto-hidden
+            // (the old invisible hotspot was undiscoverable).
             VStack {
                 HStack {
                     Spacer()
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                        .opacity(0.001)
-                        .onTapGesture { bumpActivity() }
-                        .accessibilityHidden(true)
+                    Button { bumpActivity() } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.body)
+                            .padding(10)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .opacity(0.6)
                 }
                 Spacer()
             }
             .padding(8)
+            .opacity(isFullscreen && controlMode == .pointer && !showOverlays ? 1 : 0)
             .allowsHitTesting(isFullscreen && controlMode == .pointer && !showOverlays)
             .zIndex(3)
 
@@ -177,7 +199,30 @@ struct LiveScreenView: View {
             scheduleOverlayAutoHideIfNeeded()
         }
         .onDisappear { stopStreamingIfNeeded() }
-        .sheet(isPresented: $showKeyboardSheet) { KeyboardView() }
+        .onReceive(network.$liveImage) { image in
+            if image != nil {
+                lastFrameAt = Date()
+                if network.streamErrorReason != nil { network.streamErrorReason = nil }
+            }
+        }
+        .onChange(of: network.isConnected) { _, connected in
+            // The stream dies with the old connection on auto-reconnect;
+            // re-request it on the fresh one.
+            if connected && isStreaming {
+                network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+            }
+        }
+        .task {
+            // Stream watchdog: if we're supposed to be streaming but frames
+            // stopped for >3s, re-request the stream (covers reconnects and
+            // transient capture failures on the Mac).
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if isStreaming && Date().timeIntervalSince(lastFrameAt) > 3 && network.isConnected {
+                    network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+                }
+            }
+        }
         .sheet(isPresented: $showShortcuts) { AppShortcutsView() }
         .onChange(of: isStreaming) { _, streaming in
             DispatchQueue.main.async {
@@ -217,47 +262,50 @@ struct LiveScreenView: View {
                 HStack {
                     Spacer()
                     if isFullscreen && controlMode == .pointer {
-                        FloatingClickBar(dragLocked: $dragLocked)
+                        FloatingClickBar(dragLocked: $dragLocked,
+                                         controlMode: $controlMode,
+                                         onKeyboard: { keyboard.visible = true })
                     } else {
-                        HStack(spacing: 8) {
-                            // Mode toggle
+                        // Two rows: a single row of labeled buttons overflows
+                        // an iPhone and everything squishes.
+                        VStack(spacing: 8) {
                             Picker("Mode", selection: $controlMode) {
                                 Text("Pointer").tag(ControlMode.pointer)
+                                Text("Touch").tag(ControlMode.touch)
                                 Text("View").tag(ControlMode.view)
                             }
                             .pickerStyle(.segmented)
-                            .frame(maxWidth: 260)
+                            .frame(maxWidth: 280)
 
-                            Spacer()
+                            HStack(spacing: 10) {
+                                Button { NetworkManager.shared.sendClick(button: "left") } label: {
+                                    Image(systemName: "cursorarrow.click")
+                                }
+                                .buttonStyle(.borderedProminent)
 
-                            // Clicks
-                            Button { NetworkManager.shared.sendClick(button: "left") } label: {
-                                Label("Click", systemImage: "cursorarrow.click")
+                                Button { NetworkManager.shared.sendClick(button: "right") } label: {
+                                    Image(systemName: "cursorarrow.rays")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button { keyboard.visible = true } label: {
+                                    Image(systemName: "keyboard")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button { showShortcuts = true } label: {
+                                    Image(systemName: "square.grid.2x2")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button(isStreaming ? "Stop" : "Start") {
+                                    if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
+                                }
+                                .buttonStyle(.borderedProminent)
                             }
-                            .buttonStyle(.borderedProminent)
-
-                            Button { NetworkManager.shared.sendClick(button: "right") } label: {
-                                Label("Right", systemImage: "cursorarrow.rays")
-                            }
-                            .buttonStyle(.bordered)
-
-                            // Keyboard
-                            Button { showKeyboardSheet = true } label: {
-                                Label("Keyboard", systemImage: "keyboard")
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button { showShortcuts = true } label: {
-                                Label("Apps", systemImage: "square.grid.2x2")
-                            }
-                            .buttonStyle(.bordered)
-
-                            // Start/Stop
-                            Button(isStreaming ? "Stop" : "Start") {
-                                if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
-                            }
-                            .buttonStyle(.borderedProminent)
                         }
+                        .padding(10)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                     }
                     Spacer()
                 }
@@ -459,9 +507,24 @@ private struct TrackpadGestureBridgeOverlay: View {
 
 private struct FloatingClickBar: View {
     @Binding var dragLocked: Bool
+    @Binding var controlMode: LiveScreenView.ControlMode
+    var onKeyboard: () -> Void
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
+            // Mode switcher — without this, fullscreen pointer mode (the
+            // iPhone default) trapped you: no way to reach Touch/View.
+            Menu {
+                Picker("Mode", selection: $controlMode) {
+                    Label("Pointer", systemImage: "cursorarrow").tag(LiveScreenView.ControlMode.pointer)
+                    Label("Touch", systemImage: "hand.tap").tag(LiveScreenView.ControlMode.touch)
+                    Label("View", systemImage: "eye").tag(LiveScreenView.ControlMode.view)
+                }
+            } label: {
+                Image(systemName: "cursorarrow.square")
+                    .imageScale(.large)
+            }
+
             Button {
                 NetworkManager.shared.sendClick(button: "left")
             } label: {
@@ -487,6 +550,14 @@ private struct FloatingClickBar: View {
                 }
             } label: {
                 Image(systemName: dragLocked ? "hand.draw.fill" : "hand.draw")
+                    .imageScale(.large)
+            }
+            .buttonStyle(.bordered)
+
+            // The keyboard was unreachable in fullscreen — the whole reason
+            // "there is no button to click to open it".
+            Button(action: onKeyboard) {
+                Image(systemName: "keyboard")
                     .imageScale(.large)
             }
             .buttonStyle(.bordered)

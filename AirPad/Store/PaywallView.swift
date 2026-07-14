@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import StoreKit
 
 struct PaywallView: View {
     @ObservedObject private var store = ProStore.shared
