@@ -305,6 +305,9 @@ final class NetworkManager: ObservableObject {
         reconnectBackoff = 1.0
         reconnectTimer?.cancel()
         reconnectTimer = nil
+        // Desktop ids can change across Mac restarts; drop previews keyed by
+        // the old session's ids so stale images never stick to wrong cards.
+        DispatchQueue.main.async { self.desktopPreviews = [:] }
 
         connectingServiceID = service.id
         lastErrorMessage = nil
