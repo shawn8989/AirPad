@@ -150,6 +150,7 @@ final class HandGestureRecognizer {
         currentPose = .none
         candidatePose = .none
         candidateFrames = 0
+        fingerExtendedState.removeAll()
         lastPalmX = nil
         palmTravel = 0
         holdFired = false
@@ -169,13 +170,25 @@ final class HandGestureRecognizer {
         hypot(a.x - b.x, a.y - b.y)
     }
 
+    // Sticky per-finger extension state. A single threshold made a slightly
+    // curled hand oscillate extended/curled frame-to-frame, which flickered
+    // the pose (pointer -> fist) and glitched the cursor. Hysteresis: a finger
+    // becomes extended above 1.18 and only stops being extended below 1.05.
+    private var fingerExtendedState: [VNHumanHandPoseObservation.JointName: Bool] = [:]
+
     /// A finger is extended when its tip is meaningfully farther from the
     /// wrist than its middle joint — a ratio, so hand size cancels out.
     private func extended(_ hand: VNHumanHandPoseObservation, wrist: CGPoint,
                           _ tip: VNHumanHandPoseObservation.JointName,
                           _ pip: VNHumanHandPoseObservation.JointName) -> Bool {
-        guard let t = point(hand, tip), let p = point(hand, pip) else { return false }
-        return distance(t, wrist) > distance(p, wrist) * 1.15
+        guard let t = point(hand, tip), let p = point(hand, pip) else {
+            return fingerExtendedState[tip] ?? false  // keep last known on a dropout
+        }
+        let ratio = distance(t, wrist) / max(distance(p, wrist), 0.0001)
+        let was = fingerExtendedState[tip] ?? (ratio > 1.15)
+        let now = was ? (ratio > 1.05) : (ratio > 1.18)
+        fingerExtendedState[tip] = now
+        return now
     }
 
     private func thumbExtended(_ hand: VNHumanHandPoseObservation, wrist: CGPoint, scale: CGFloat) -> Bool {
@@ -214,7 +227,15 @@ final class HandGestureRecognizer {
             candidatePose = observed
             candidateFrames = 1
         }
-        guard candidateFrames >= 4 else { return }
+        // Asymmetric commitment: closed-hand poses need stronger evidence
+        // (~0.23s) because they're the common misreads of a pointing hand;
+        // returning to pointer/palm/scroll stays fast.
+        let required: Int
+        switch observed {
+        case .fist, .thumbsUp, .shaka: required = 7
+        default: required = 4
+        }
+        guard candidateFrames >= required else { return }
 
         // Commit the pose change.
         let leaving = currentPose

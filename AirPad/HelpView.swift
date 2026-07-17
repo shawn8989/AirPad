@@ -40,8 +40,8 @@ struct HelpView: View {
                 helpRow("Lock Mac Screen asks for confirmation first.")
             }
 
-            Section("Dictation") {
-                helpRow("Click where you want the text on the Mac, then dictate on the phone, review the transcript, and tap Type on Mac.")
+            Section("Voice Typing") {
+                helpRow("Click where you want the text on the Mac, open the keyboard, and tap the mic key — what you say is typed on the Mac when you finish speaking.")
             }
 
             Section("Keyboard, Apps & Live Screen") {

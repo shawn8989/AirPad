@@ -38,7 +38,7 @@ struct OnboardingView: View {
             OnboardingPage(
                 title: "Media, Clipboard & More",
                 systemImage: "playpause.fill",
-                text: "The Media screen has volume, playback, brightness, presentation slides, clipboard sync, and screen lock. Dictation types what you say directly on the Mac.",
+                text: "The Media screen has volume, playback, brightness, presentation slides, clipboard sync, and screen lock. The keyboard's mic key types what you say directly on the Mac.",
                 detail: "Find everything on the main screen after you connect."
             )
         }

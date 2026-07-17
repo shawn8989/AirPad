@@ -34,7 +34,7 @@ struct PaywallView: View {
                     featureRow("dot.circle.and.hand.point.up.left.fill", "Air Mouse", "Point with your phone like a Wii remote")
                     featureRow("hand.point.up.left", "Hand Mouse", "Camera hand-tracking with gestures")
                     featureRow("playpause.fill", "Media & Presentation Remote", "Volume, playback, slides, brightness, lock")
-                    featureRow("mic.fill", "Dictation", "Speak on the phone, type on the Mac")
+                    featureRow("mic.fill", "Voice Typing", "Dictate with the keyboard mic, type on the Mac")
                     featureRow("display", "Live Screen & Apps", "See and drive your Mac's screen")
                     featureRow("laptopcomputer.and.iphone", "Multi-Mac", "Pair and switch between all your Macs")
                     featureRow("hand.draw", "All future gestures", "Includes the upcoming gesture recorder")
