@@ -183,18 +183,17 @@ struct RemoteKeyboardInput: UIViewRepresentable {
             resetSentinel()
         }
 
-        // UITextInput's OPTIONAL dictation hooks — not declared by UITextField
-        // publicly, so these are implementations, not overrides. Flushing is
-        // idempotent (resetSentinel empties the buffer), so it's safe if both
-        // fire, or if neither does (editingChanged's wasDictating catches it).
-        func insertDictationResult(_ dictationResult: [UIDictationPhrase]) {
-            // Dictation live-inserts its text into the field as it goes, so
-            // the field already holds the result — just flush it.
+        // UITextInput dictation hooks. Flushing is idempotent (resetSentinel
+        // empties the buffer), so it's safe if both fire — or if neither does
+        // (editingChanged's wasDictating check catches that).
+        override func insertDictationResult(_ dictationResult: [UIDictationPhrase]) {
+            super.insertDictationResult(dictationResult)  // finalize the text
             wasDictating = false
             flushDictationText()
         }
 
-        func dictationRecordingDidEnd() {
+        override func dictationRecordingDidEnd() {
+            super.dictationRecordingDidEnd()
             wasDictating = false
             flushDictationText()
         }
