@@ -1010,8 +1010,11 @@ final class NetworkManager: ObservableObject {
         try? send(type: "action", payload: ["name": name])
     }
 
-    func sendSwipe(fingers: Int, direction: String) {
-        try? send(type: "swipe", payload: ["fingers": fingers, "direction": direction])
+    func sendSwipe(fingers: Int, direction: String, skipFullscreen: Bool = false) {
+        // skipFullscreen: the Desktop buttons hop over full-screen-app Spaces
+        // (they want real desktops); gesture swipes keep native traversal.
+        try? send(type: "swipe", payload: ["fingers": fingers, "direction": direction,
+                                           "skipFullscreen": skipFullscreen])
     }
 
     // Two-finger horizontal flick -> browser back/forward. direction: "back"|"forward".

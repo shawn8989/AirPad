@@ -106,9 +106,9 @@ enum GestureAction: Codable, Equatable, Hashable {
         case .media(_, let action):
             net.sendMedia(action: action)
         case .desktopLeft:
-            net.sendSwipe(fingers: 3, direction: "left")
+            net.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
         case .desktopRight:
-            net.sendSwipe(fingers: 3, direction: "right")
+            net.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
         case .missionControl:
             net.sendSwipe(fingers: 3, direction: "up")
         case .typeText(let text):

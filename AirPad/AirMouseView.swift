@@ -256,7 +256,7 @@ struct AirMouseView: View {
             // presentations (type a search, hop between full-screen apps).
             HStack {
                 Button {
-                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
                     if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 } label: {
                     Label("Desktop", systemImage: "chevron.left")
@@ -273,7 +273,7 @@ struct AirMouseView: View {
                 .buttonStyle(.bordered)
 
                 Button {
-                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                     if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
                 } label: {
                     HStack {

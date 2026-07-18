@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import Combine
-import AVKit
 
 struct LiveScreenView: View {
     @StateObject private var network = NetworkManager.shared
@@ -23,6 +22,8 @@ struct LiveScreenView: View {
     @ObservedObject private var keyboard = KeyboardPresenter.shared
     @State private var lastFrameAt = Date()
     @State private var showShortcuts = false
+    @State private var showOptions = false
+    @State private var showTVHelp = false
 
     // Zoom & pan (view mode)
     @State private var zoom: CGFloat = 1.0
@@ -202,6 +203,12 @@ struct LiveScreenView: View {
             }
         }
         .sheet(isPresented: $showShortcuts) { AppShortcutsView() }
+        .sheet(isPresented: $showOptions) { optionsSheet }
+        .alert("Show your Mac on a TV", isPresented: $showTVHelp) {
+            Button("OK") {}
+        } message: {
+            Text("Open Control Center (swipe down from the top-right corner), tap Screen Mirroring, and choose your TV. The TV will show your Mac's screen fullscreen while this phone stays the controller. (Apple only allows starting screen mirroring from Control Center.)")
+        }
         .onChange(of: isStreaming) { _, streaming in
             DispatchQueue.main.async {
                 UIApplication.shared.isIdleTimerDisabled = streaming
@@ -231,7 +238,7 @@ struct LiveScreenView: View {
 
             HStack(spacing: 4) {
                 barButton("Desktop", "chevron.left") {
-                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
                 barButton("Click", "cursorarrow.click", tint: .accentColor) {
@@ -256,17 +263,11 @@ struct LiveScreenView: View {
                 barButton("Apps", "square.grid.2x2") {
                     showShortcuts = true
                 }
-                // In-app AirPlay: pick the TV without leaving the app.
-                VStack(spacing: 2) {
-                    AirPlayRouteButton()
-                        .frame(width: 34, height: 24)
-                    Text("TV")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                barButton("TV", "tv") {
+                    showTVHelp = true
                 }
-                .frame(minWidth: 42)
                 barButton("Desktop", "chevron.right") {
-                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
             }
@@ -303,64 +304,86 @@ struct LiveScreenView: View {
         .background(.ultraThinMaterial, in: Capsule())
     }
 
+    // The Options button opens a real settings SHEET. The old pull-down menu
+    // held a Slider — which SwiftUI menus don't support: broken layout
+    // constraints, taps dismissing the menu, no landscape scrolling.
     private var topRightMenu: some View {
-        Menu {
-            Button("App Shortcuts") { showShortcuts = true }
-            // Fit / Fill
-            Picker("Content Mode", selection: $fitMode) {
-                Text("Fit").tag(ContentMode.fit)
-                Text("Fill").tag(ContentMode.fill)
-            }
-
-            // Zoom controls (only in view mode)
-            if controlMode == .view {
-                Button("Reset Zoom") { withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero } }
-            }
-
-            // Quality
-            Section("Quality") {
-                qualitySlider
-            }
-
-            // Resolution
-            Section("Max Width") {
-                Button("640 px") { maxWidth = 640 }
-                Button("1024 px") { maxWidth = 1024 }
-                Button("1600 px") { maxWidth = 1600 }
-                Button("2048 px") { maxWidth = 2048 }
-            }
-
-            // Stream on/off
-            Button(isStreaming ? "Stop Stream" : "Start Stream") {
-                if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
-            }
-
-            // Full screen
-            Button(isFullscreen ? "Exit Full Screen" : "Full Screen") {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isFullscreen.toggle()
-                }
-            }
-
+        Button {
+            showOptions = true
         } label: {
-            Label("Options", systemImage: "ellipsis.circle")
+            Label("Options", systemImage: "slider.horizontal.3")
                 .font(.title3)
                 .padding(6)
                 .background(.ultraThinMaterial, in: Capsule())
         }
     }
 
-    private var qualitySlider: some View {
-        HStack {
-            Image(systemName: "cpu")
-            Slider(value: $quality, in: 0.1...1.0, step: 0.05) {
-                Text("Quality")
-            } minimumValueLabel: {
-                Text("Low").font(.caption)
-            } maximumValueLabel: {
-                Text("High").font(.caption)
+    private var optionsSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Stream") {
+                    HStack {
+                        Text("Quality")
+                        Slider(value: $quality, in: 0.1...1.0, step: 0.05)
+                        Text("\(Int(quality * 100))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 46, alignment: .trailing)
+                    }
+                    Picker("Resolution", selection: $maxWidth) {
+                        Text("640").tag(640)
+                        Text("1024").tag(1024)
+                        Text("1600").tag(1600)
+                        Text("2048").tag(2048)
+                    }
+                    .pickerStyle(.segmented)
+                    HStack {
+                        Text("Frame rate")
+                        Spacer()
+                        Text(String(format: "%.1f FPS", network.liveFPS))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Button(isStreaming ? "Stop Stream" : "Start Stream") {
+                        if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
+                    }
+                }
+
+                Section("Display") {
+                    Picker("Scaling", selection: $fitMode) {
+                        Text("Fit (whole screen)").tag(ContentMode.fit)
+                        Text("Fill (crop edges)").tag(ContentMode.fill)
+                    }
+                    Toggle("Full screen", isOn: Binding(
+                        get: { isFullscreen },
+                        set: { newValue in withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = newValue } }))
+                    if controlMode == .view {
+                        Button("Reset zoom") {
+                            withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero }
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        showOptions = false
+                        showShortcuts = true
+                    } label: {
+                        Label("App Shortcuts & Launcher", systemImage: "square.grid.2x2")
+                    }
+                } footer: {
+                    Text("Pointer = trackpad on the video. Touch = tap exactly what you see (double-tap opens, two fingers scroll, hold to drag). View = zoom and pan without sending clicks.")
+                }
+            }
+            .navigationTitle("Live Screen Options")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showOptions = false }
+                }
             }
         }
+        .presentationDetents([.medium, .large])
     }
 
     // MARK: - Gestures (view mode)
@@ -461,18 +484,6 @@ private struct TrackpadGestureBridgeOverlay: View {
             .background(Color.clear)
             .accessibilityHidden(true)
     }
-}
-
-/// In-app AirPlay picker: tapping it opens the system route sheet so the
-/// user can send the app to a TV without leaving for Control Center.
-private struct AirPlayRouteButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let view = AVRoutePickerView()
-        view.prioritizesVideoDevices = true
-        return view
-    }
-
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
 private struct EdgeGestureZones: View {

@@ -363,7 +363,7 @@ struct MainControlView: View {
         HStack(spacing: 10) {
             // Desktop hop, one tap from the trackpad — no swipe gymnastics.
             Button {
-                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } label: {
                 Image(systemName: "chevron.left")
@@ -397,7 +397,7 @@ struct MainControlView: View {
             .buttonStyle(.bordered)
 
             Button {
-                NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } label: {
                 Image(systemName: "chevron.right")
