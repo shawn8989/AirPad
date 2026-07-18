@@ -24,6 +24,17 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
 
+    <!-- TV Mode: without a scene manifest declaring multi-scene support, iOS
+         never offers the app the external display as its own scene — AirPlay
+         just mirrors the phone. This flag is what lets TVSceneDelegate claim
+         the TV and show the Mac's screen there. (iPhone still shows a single
+         window; multiple scenes only matter for the external display.) -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <true/>
+    </dict>
+
     <!-- Only exempt encryption (TLS): skips the export-compliance question
          on every App Store upload -->
     <key>ITSAppUsesNonExemptEncryption</key>

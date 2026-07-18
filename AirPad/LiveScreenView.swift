@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Combine
+import AVKit
 
 struct LiveScreenView: View {
     @StateObject private var network = NetworkManager.shared
@@ -17,10 +18,8 @@ struct LiveScreenView: View {
     fileprivate enum ControlMode: String, CaseIterable, Identifiable { case pointer, touch, view; var id: String { rawValue } }
     @State private var controlMode: ControlMode = .pointer
 
-    // Fullscreen & overlays
-//    @State private var isFullscreen = false
+    // Fullscreen
     @State private var isFullscreen = UIDevice.current.userInterfaceIdiom == .phone
-    @State private var showOverlays = true
     @ObservedObject private var keyboard = KeyboardPresenter.shared
     @State private var lastFrameAt = Date()
     @State private var showShortcuts = false
@@ -35,14 +34,9 @@ struct LiveScreenView: View {
     @State private var quality: Double = 0.7
     @State private var maxWidth: Int = 1600 // default higher resolution
 
-    // Debounce restart and auto-hide overlays
+    // Debounce restart of the stream on quality/size changes
     @State private var pendingRestartWorkItem: DispatchWorkItem?
-    @State private var overlayAutoHideWorkItem: DispatchWorkItem?
     @State private var dragLocked: Bool = false
-
-    // Auto-hide delay (seconds). 3s proved too aggressive — the controls
-    // vanished before people found them.
-    private let overlayAutoHideDelay: TimeInterval = 8.0
 
     var body: some View {
         ZStack {
@@ -110,23 +104,33 @@ struct LiveScreenView: View {
             .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 16))
             .padding(isFullscreen ? 0 : 12)
             .ignoresSafeArea(edges: isFullscreen ? .all : [])
-            .overlay(
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Single tap toggles overlays when in fullscreen and not in pointer mode
-                        withAnimation(.easeInOut(duration: 0.2)) { showOverlays.toggle() }
-                        if showOverlays { scheduleOverlayAutoHide() } else { cancelOverlayAutoHide() }
+            // Persistent chrome: nothing auto-hides anymore — the controls
+            // vanished mid-reach and felt broken. Top row: back (fullscreen),
+            // FPS, Options. Bottom: the labeled control bar.
+            VStack {
+                HStack(spacing: 8) {
+                    if isFullscreen {
+                        Button {
+                            stopStreamingIfNeeded()
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.headline)
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
                     }
-                    // Only View mode uses tap-to-toggle-overlays; Pointer and
-                    // Touch modes need every tap for input.
-                    .allowsHitTesting(isFullscreen && controlMode == .view)
-            )
-
-            // Overlays
-            if showOverlays {
-                overlayUI
+                    fpsOverlay
+                    Spacer()
+                    topRightMenu
+                }
+                .padding(8)
+                Spacer()
+                controlBar
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, isFullscreen ? 12 : 4)
             }
+            .zIndex(2)
 
             // TV Mode: the picture is on the television; this screen is the remote.
             if TVSceneManager.shared.tvConnected {
@@ -142,46 +146,6 @@ struct LiveScreenView: View {
                 .allowsHitTesting(false)
                 .zIndex(4)
             }
-
-            VStack {
-                HStack {
-                    Button(action: {
-                        stopStreamingIfNeeded()
-                        dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.headline)
-                            .padding(8)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .padding(8)
-                    .allowsHitTesting(true)
-                    Spacer()
-                }
-                Spacer()
-            }
-            .opacity(isFullscreen ? 1 : 0)
-            .zIndex(2)
-
-            // Visible handle to bring the controls back when they've auto-hidden
-            // (the old invisible hotspot was undiscoverable).
-            VStack {
-                HStack {
-                    Spacer()
-                    Button { bumpActivity() } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.body)
-                            .padding(10)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .opacity(0.6)
-                }
-                Spacer()
-            }
-            .padding(8)
-            .opacity(isFullscreen && controlMode == .pointer && !showOverlays ? 1 : 0)
-            .allowsHitTesting(isFullscreen && controlMode == .pointer && !showOverlays)
-            .zIndex(3)
 
             // Debug HUD for event counters
             VStack {
@@ -201,6 +165,7 @@ struct LiveScreenView: View {
                 .padding(8)
                 Spacer()
             }
+            .padding(.top, 52)  // below the back/FPS/Options row
             .allowsHitTesting(false)
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -210,8 +175,6 @@ struct LiveScreenView: View {
         .onAppear {
             // Start streaming automatically when entering if not already
             if !isStreaming { startStreaming() }
-            // Prepare auto-hide if applicable
-            scheduleOverlayAutoHideIfNeeded()
         }
         .onDisappear { stopStreamingIfNeeded() }
         .onReceive(network.$liveImage) { image in
@@ -243,91 +206,91 @@ struct LiveScreenView: View {
             DispatchQueue.main.async {
                 UIApplication.shared.isIdleTimerDisabled = streaming
             }
-            if streaming { scheduleOverlayAutoHideIfNeeded() } else { cancelOverlayAutoHide() }
         }
         .onChange(of: quality) { _, _ in scheduleRestartDebounced() }
         .onChange(of: maxWidth) { _, _ in scheduleRestartDebounced() }
-        .onChange(of: isFullscreen) { _, _ in scheduleOverlayAutoHideIfNeeded() }
-        .onChange(of: controlMode) { _, _ in scheduleOverlayAutoHideIfNeeded() }
         .onChange(of: network.debugMouseMoveCount) { _, _ in showDebugAndAutoHide() }
         .onChange(of: network.debugScrollCount) { _, _ in showDebugAndAutoHide() }
         .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide() }
     }
 
-    // MARK: - Overlay UI
-    private var overlayUI: some View {
-        ZStack {
-            // FPS (top-left)
-            VStack { HStack { fpsOverlay; Spacer() }; Spacer() }
-                .padding(8)
+    // MARK: - Control bar (persistent, labeled)
 
-            // Top-right controls
-            VStack {
-                HStack {
-                    Spacer()
-                    topRightMenu
-                }
-                Spacer()
+    /// The always-visible control strip: mode picker on top, one row of
+    /// captioned buttons below. Every control is labeled — icon-only buttons
+    /// left people guessing, and auto-hiding made them unclickable.
+    private var controlBar: some View {
+        VStack(spacing: 8) {
+            Picker("Mode", selection: $controlMode) {
+                Text("Pointer").tag(ControlMode.pointer)
+                Text("Touch").tag(ControlMode.touch)
+                Text("View").tag(ControlMode.view)
             }
-            .padding(8)
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 300)
 
-            // Bottom controls
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    if isFullscreen && controlMode == .pointer {
-                        FloatingClickBar(dragLocked: $dragLocked,
-                                         controlMode: $controlMode,
-                                         onKeyboard: { keyboard.visible = true })
-                    } else {
-                        // Two rows: a single row of labeled buttons overflows
-                        // an iPhone and everything squishes.
-                        VStack(spacing: 8) {
-                            Picker("Mode", selection: $controlMode) {
-                                Text("Pointer").tag(ControlMode.pointer)
-                                Text("Touch").tag(ControlMode.touch)
-                                Text("View").tag(ControlMode.view)
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(maxWidth: 280)
-
-                            HStack(spacing: 10) {
-                                Button { NetworkManager.shared.sendClick(button: "left") } label: {
-                                    Image(systemName: "cursorarrow.click")
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Button { NetworkManager.shared.sendClick(button: "right") } label: {
-                                    Image(systemName: "cursorarrow.rays")
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button { keyboard.visible = true } label: {
-                                    Image(systemName: "keyboard")
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button { showShortcuts = true } label: {
-                                    Image(systemName: "square.grid.2x2")
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button(isStreaming ? "Stop" : "Start") {
-                                    if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                        }
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    Spacer()
+            HStack(spacing: 4) {
+                barButton("Desktop", "chevron.left") {
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
-                .padding(8)
+                barButton("Click", "cursorarrow.click", tint: .accentColor) {
+                    NetworkManager.shared.sendClick(button: "left")
+                }
+                barButton("Right", "cursorarrow.rays") {
+                    NetworkManager.shared.sendClick(button: "right")
+                }
+                barButton(dragLocked ? "Release" : "Drag",
+                          dragLocked ? "hand.draw.fill" : "hand.draw",
+                          tint: dragLocked ? .orange : nil) {
+                    dragLocked.toggle()
+                    if dragLocked {
+                        NetworkManager.shared.sendMouseDown(button: "left")
+                    } else {
+                        NetworkManager.shared.sendMouseUp(button: "left")
+                    }
+                }
+                barButton("Keys", "keyboard") {
+                    keyboard.visible = true
+                }
+                barButton("Apps", "square.grid.2x2") {
+                    showShortcuts = true
+                }
+                // In-app AirPlay: pick the TV without leaving the app.
+                VStack(spacing: 2) {
+                    AirPlayRouteButton()
+                        .frame(width: 34, height: 24)
+                    Text("TV")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(minWidth: 42)
+                barButton("Desktop", "chevron.right") {
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
             }
         }
-        .zIndex(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 500)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private func barButton(_ title: String, _ icon: String, tint: Color? = nil,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(tint ?? .primary)
+            .frame(minWidth: 42, minHeight: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var fpsOverlay: some View {
@@ -367,11 +330,15 @@ struct LiveScreenView: View {
                 Button("2048 px") { maxWidth = 2048 }
             }
 
+            // Stream on/off
+            Button(isStreaming ? "Stop Stream" : "Start Stream") {
+                if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
+            }
+
             // Full screen
             Button(isFullscreen ? "Exit Full Screen" : "Full Screen") {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isFullscreen.toggle()
-                    showOverlays = !isFullscreen ? true : showOverlays
                 }
             }
 
@@ -462,36 +429,6 @@ struct LiveScreenView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
-    // MARK: - Overlay auto-hide
-    private func scheduleOverlayAutoHideIfNeeded() {
-        cancelOverlayAutoHide()
-        guard isFullscreen, controlMode == .pointer, isStreaming else { return }
-        scheduleOverlayAutoHide()
-    }
-
-    private func scheduleOverlayAutoHide() {
-        cancelOverlayAutoHide()
-        let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.2)) { self.showOverlays = false }
-        }
-        overlayAutoHideWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + overlayAutoHideDelay, execute: work)
-    }
-
-    private func cancelOverlayAutoHide() {
-        overlayAutoHideWorkItem?.cancel()
-        overlayAutoHideWorkItem = nil
-    }
-
-    private func bumpActivity() {
-        // Show overlays and restart hide timer when in fullscreen pointer mode
-        guard isFullscreen, controlMode == .pointer else { return }
-        if !showOverlays {
-            withAnimation(.easeInOut(duration: 0.2)) { showOverlays = true }
-        }
-        scheduleOverlayAutoHide()
-    }
-
     private func showDebugAndAutoHide() {
         showDebugHUD = true
         hudHideWorkItem?.cancel()
@@ -526,66 +463,16 @@ private struct TrackpadGestureBridgeOverlay: View {
     }
 }
 
-private struct FloatingClickBar: View {
-    @Binding var dragLocked: Bool
-    @Binding var controlMode: LiveScreenView.ControlMode
-    var onKeyboard: () -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            // Mode switcher — without this, fullscreen pointer mode (the
-            // iPhone default) trapped you: no way to reach Touch/View.
-            Menu {
-                Picker("Mode", selection: $controlMode) {
-                    Label("Pointer", systemImage: "cursorarrow").tag(LiveScreenView.ControlMode.pointer)
-                    Label("Touch", systemImage: "hand.tap").tag(LiveScreenView.ControlMode.touch)
-                    Label("View", systemImage: "eye").tag(LiveScreenView.ControlMode.view)
-                }
-            } label: {
-                Image(systemName: "cursorarrow.square")
-                    .imageScale(.large)
-            }
-
-            Button {
-                NetworkManager.shared.sendClick(button: "left")
-            } label: {
-                Image(systemName: "cursorarrow.click")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button {
-                NetworkManager.shared.sendClick(button: "right")
-            } label: {
-                Image(systemName: "cursorarrow.rays")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.bordered)
-
-            Button {
-                dragLocked.toggle()
-                if dragLocked {
-                    NetworkManager.shared.sendMouseDown(button: "left")
-                } else {
-                    NetworkManager.shared.sendMouseUp(button: "left")
-                }
-            } label: {
-                Image(systemName: dragLocked ? "hand.draw.fill" : "hand.draw")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.bordered)
-
-            // The keyboard was unreachable in fullscreen — the whole reason
-            // "there is no button to click to open it".
-            Button(action: onKeyboard) {
-                Image(systemName: "keyboard")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(8)
-        .background(.ultraThinMaterial, in: Capsule())
+/// In-app AirPlay picker: tapping it opens the system route sheet so the
+/// user can send the app to a TV without leaving for Control Center.
+private struct AirPlayRouteButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.prioritizesVideoDevices = true
+        return view
     }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
 private struct EdgeGestureZones: View {

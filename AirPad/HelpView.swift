@@ -41,7 +41,8 @@ struct HelpView: View {
             }
 
             Section("TV Mode") {
-                helpRow("Mirror your iPhone to a TV (Control Center → Screen Mirroring, or an HDMI adapter): the TV shows your Mac's screen fullscreen while the phone stays your controller — use the trackpad or Live Screen to drive what you see. Great when the Mac is in another room.")
+                helpRow("Mirror your iPhone to a TV (the TV button in Live Screen, Control Center → Screen Mirroring, or an HDMI adapter): the TV shows your Mac's screen fullscreen while the phone stays your controller — use the trackpad or Live Screen to drive what you see. Great when the Mac is in another room.")
+                helpRow("Live Screen controls: Pointer = trackpad on the video, Touch = tap exactly what you see, View = zoom/pan without clicking. The Desktop ◀ ▶ buttons switch desktops and the picture follows.")
             }
 
             Section("Voice Typing") {
