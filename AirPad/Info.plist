@@ -33,6 +33,22 @@
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
         <true/>
+        <!-- Declaring the external-display configuration here is what makes
+             iOS hand the TV to TVSceneDelegate; relying on the app delegate
+             callback alone is not honored under the SwiftUI lifecycle and the
+             system falls back to mirroring the phone. -->
+        <key>UISceneConfigurations</key>
+        <dict>
+            <key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>TV</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>$(PRODUCT_MODULE_NAME).TVSceneDelegate</string>
+                </dict>
+            </array>
+        </dict>
     </dict>
 
     <!-- Only exempt encryption (TLS): skips the export-compliance question

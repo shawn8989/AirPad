@@ -95,16 +95,19 @@ final class TVSceneManager: ObservableObject {
         NetworkManager.shared.$isConnected
             .receive(on: DispatchQueue.main)
             .sink { [weak self] connected in
-                guard let self, connected, self.tvConnected else { return }
+                guard let self, connected, self.tvConnected, !self.phoneWantsStream else { return }
                 NetworkManager.shared.startLiveScreen(maxWidth: 1920, quality: 0.75)
             }
             .store(in: &cancellables)
 
+        // Watchdog only drives the stream when the phone's Live Screen isn't
+        // open — otherwise the two would fight over quality/resolution.
         watchdog = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard let self, self.tvConnected else { return }
-                if Date().timeIntervalSince(self.lastFrameAt) > 3 && NetworkManager.shared.isConnected {
+                if !self.phoneWantsStream,
+                   Date().timeIntervalSince(self.lastFrameAt) > 3 && NetworkManager.shared.isConnected {
                     NetworkManager.shared.startLiveScreen(maxWidth: 1920, quality: 0.75)
                 }
             }
