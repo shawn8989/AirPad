@@ -58,6 +58,9 @@ final class TVSceneDelegate: NSObject, UIWindowSceneDelegate {
 
 /// Owns the TV side of the live-stream lifecycle. The stream is shared with
 /// LiveScreenView: whoever needs it starts it; it stops only when nobody does.
+/// Main-actor: every caller (scene delegates, SwiftUI views) is already on the
+/// main thread, and ProStore/NetworkManager's published state lives there too.
+@MainActor
 final class TVSceneManager: ObservableObject {
     static let shared = TVSceneManager()
 
