@@ -12,9 +12,9 @@ import SwiftUI
 
 struct MacSwitcherView: View {
     struct AppGroup: Identifiable {
-        let id: String          // bundleID (fallback: app name)
+        let id: String          // lowercased app name
         let name: String
-        let bundleID: String?
+        var bundleID: String?
         var windows: [MacWindowInfo]
     }
 
@@ -258,7 +258,11 @@ struct MacSwitcherView: View {
     /// Tapping an app focuses its best window (and switches desktop to it).
     private func focus(_ group: AppGroup) {
         if hapticsEnabled { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-        if let window = group.windows.first(where: { !$0.isMinimized }) ?? group.windows.first {
+        // Prefer a window whose desktop is known — that's the one the Mac can
+        // jump to; otherwise fall back to any visible window, then activation.
+        if let window = group.windows.first(where: { !$0.isMinimized && $0.space != nil })
+            ?? group.windows.first(where: { !$0.isMinimized })
+            ?? group.windows.first {
             NetworkManager.shared.sendFocusWindowAndSpace(windowID: window.id)
         } else if let bundleID = group.bundleID {
             NetworkManager.shared.sendActivateApp(bundleIdentifier: bundleID)
@@ -316,9 +320,15 @@ struct MacSwitcherView: View {
         // Group by app so ten Safari windows/tabs read as one "Safari" entry.
         var byApp: [String: AppGroup] = [:]
         for window in useful {
-            let key = window.appBundleIdentifier.isEmpty ? window.appName : window.appBundleIdentifier
+            // Group by app NAME: some of an app's windows report a bundle id
+            // and some don't (Safari with many tabs), which split one app into
+            // several look-alike groups when keyed by bundle id.
+            let key = window.appName.lowercased()
             if var group = byApp[key] {
                 group.windows.append(window)
+                if group.bundleID == nil && !window.appBundleIdentifier.isEmpty {
+                    group.bundleID = window.appBundleIdentifier
+                }
                 byApp[key] = group
             } else {
                 byApp[key] = AppGroup(id: key,
