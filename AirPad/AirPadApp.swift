@@ -9,6 +9,8 @@ import SwiftUI
 
 @main
 struct AirPadApp: App {
+    // Routes external-display (TV) scene sessions to TVSceneDelegate.
+    @UIApplicationDelegateAdaptor(AirPadAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     

@@ -65,7 +65,7 @@ final class HandMouseAdapter: ObservableObject {
             NetworkManager.shared.sendSwipe(fingers: 3, direction: right ? "right" : "left")
             heavyHaptic()
         case .palmHold:
-            NetworkManager.shared.sendSwipe(fingers: 3, direction: "up")  // Mission Control
+            BuiltinGestureMap.action(for: .palmHold).execute()  // default: Mission Control
             heavyHaptic()
         case .fistDragBegan:
             NetworkManager.shared.sendMouseDown(button: "left")
@@ -80,10 +80,10 @@ final class HandMouseAdapter: ObservableObject {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
         case .thumbsUpHold:
-            NetworkManager.shared.sendMedia(action: "play_pause")
+            BuiltinGestureMap.action(for: .thumbsUp).execute()  // default: play/pause
             heavyHaptic()
         case .shakaHold:
-            NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")  // next desktop
+            BuiltinGestureMap.action(for: .shaka).execute()  // default: next desktop
             heavyHaptic()
         case .custom(let id):
             // User-recorded gesture (Gesture Studio): execute its mapped action.
@@ -244,14 +244,16 @@ struct HandMouseView: View {
             List {
                 Section("Gestures") {
                     Toggle("Palm swipe → switch desktop", isOn: $palmSwipeEnabled)
-                    Toggle("Palm hold → Mission Control", isOn: $palmHoldEnabled)
                     Toggle("Two-finger V → scroll", isOn: $scrollEnabled)
                     Toggle("Fist hold → grab & drag", isOn: $fistDragEnabled)
-                    Toggle("Thumbs-up → play/pause", isOn: $thumbsUpEnabled)
-                    Toggle("Shaka 🤙 → next desktop", isOn: $shakaEnabled)
+                }
+                Section("Customizable Gestures") {
+                    builtinGestureRow(.palmHold, enabled: $palmHoldEnabled)
+                    builtinGestureRow(.thumbsUp, enabled: $thumbsUpEnabled)
+                    builtinGestureRow(.shaka, enabled: $shakaEnabled)
                 }
                 Section {
-                    Text("Pointing and pinch-to-click are always on. Turn off any gesture that misfires for you.")
+                    Text("Pointing and pinch-to-click are always on. Turn off any gesture that misfires, or tap a customizable one to change what it does — open an app, a shortcut, Mission Control, anything.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -265,6 +267,28 @@ struct HandMouseView: View {
             }
         }
         .presentationDetents([.medium])
+    }
+
+    /// A toggle + a NavigationLink into the Gesture Studio action picker, so
+    /// each built-in hold gesture's ACTION is user-remappable (e.g. shaka →
+    /// Mission Control).
+    private func builtinGestureRow(_ slot: BuiltinGestureSlot, enabled: Binding<Bool>) -> some View {
+        HStack {
+            NavigationLink {
+                ActionPickerView(selection: Binding(
+                    get: { BuiltinGestureMap.action(for: slot) },
+                    set: { BuiltinGestureMap.set($0, for: slot) }))
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(slot.displayName)
+                    Text(BuiltinGestureMap.action(for: slot).displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Toggle("", isOn: enabled)
+                .labelsHidden()
+        }
     }
 
     private func pushConfig() {

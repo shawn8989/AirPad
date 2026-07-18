@@ -53,7 +53,9 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 - [ ] Pose changes don't jump the cursor (badge + border update).
 - [ ] Fist-hold grabs (drag a window by moving the fist); open hand releases.
 - [ ] Open palm: swipe = desktop switch; hold still ~1s = Mission Control.
-- [ ] V-sign scroll; thumbs-up = play/pause; shaka = next desktop.
+- [ ] V-sign scroll; thumbs-up = play/pause; shaka = next desktop (defaults).
+- [ ] Remap: gesture settings → Shaka → Mission Control → shaka now opens
+      Mission Control; the other two keep their defaults until edited.
 - [ ] Gesture toggles in the sheet disable each gesture cleanly.
 - [ ] **Studio:** record a distinctive pose → map to Screenshot → it fires
       within ~1s, once per second max; disable stops it; survives app relaunch.
@@ -130,6 +132,16 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
 - [ ] Pair with both; picker switches on the fly; per-Mac auth works after
       relaunching both apps.
+
+## 8b. TV Mode (3 min, needs an AirPlay TV or HDMI adapter)
+
+- [ ] Control Center → Screen Mirroring → TV: the TV shows the MAC's desktop
+      fullscreen (not a mirror of the phone) within ~2s of connecting.
+- [ ] Phone trackpad moves the cursor visible on the TV; Live Screen shows the
+      "Showing on TV" banner and still controls normally.
+- [ ] Leave the phone's Live Screen while mirroring → TV picture stays.
+- [ ] Stop mirroring → phone behaves exactly as before; stream stops when
+      nothing needs it.
 
 ## 9. iPad & extras (2 min, iPad optional)
 

@@ -27,7 +27,7 @@ struct HelpView: View {
 
             Section("Hand Mouse (camera)") {
                 gestureRow("hand.point.up.left", "Move", "A relaxed hand steers the cursor (it tracks your knuckles, so clicking won't nudge it). Pinch thumb+index = click; hold the pinch = drag.")
-                gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control.")
+                gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control. Palm-hold, thumbs-up, and shaka are remappable in the gesture settings — map them to any action, like opening an app.")
                 gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
                 gestureRow("wand.and.stars", "Gesture Studio", "Record your OWN hand poses (tap the wand on the Hand Mouse screen) and map them to shortcuts, media keys, desktops, or typed text.")
                 helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The border color shows the detected pose. Video is processed on-device and never transmitted.")
@@ -38,6 +38,10 @@ struct HelpView: View {
                 helpRow("Presentation: previous/next slide and blank-screen for Keynote, PowerPoint, and Google Slides.")
                 helpRow("Clipboard: send your iPhone clipboard to the Mac (paste with ⌘V), type it directly, or fetch the Mac's clipboard to your phone.")
                 helpRow("Lock Mac Screen asks for confirmation first.")
+            }
+
+            Section("TV Mode") {
+                helpRow("Mirror your iPhone to a TV (Control Center → Screen Mirroring, or an HDMI adapter): the TV shows your Mac's screen fullscreen while the phone stays your controller — use the trackpad or Live Screen to drive what you see. Great when the Mac is in another room.")
             }
 
             Section("Voice Typing") {

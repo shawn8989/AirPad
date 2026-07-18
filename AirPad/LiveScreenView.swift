@@ -128,6 +128,21 @@ struct LiveScreenView: View {
                 overlayUI
             }
 
+            // TV Mode: the picture is on the television; this screen is the remote.
+            if TVSceneManager.shared.tvConnected {
+                VStack {
+                    Label("Showing on TV — Pointer/Touch controls it", systemImage: "tv")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 6)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+                .zIndex(4)
+            }
+
             VStack {
                 HStack {
                     Button(action: {
@@ -418,11 +433,17 @@ struct LiveScreenView: View {
     private func startStreaming() {
         network.startLiveScreen(maxWidth: maxWidth, quality: quality)
         isStreaming = true
+        TVSceneManager.shared.phoneWantsStream = true
     }
 
     private func stopStreamingIfNeeded() {
         if isStreaming {
-            network.stopLiveScreen()
+            TVSceneManager.shared.phoneWantsStream = false
+            // The TV shares this stream — leaving the phone's Live Screen must
+            // not black out the television.
+            if !TVSceneManager.shared.tvConnected {
+                network.stopLiveScreen()
+            }
             isStreaming = false
         }
     }
