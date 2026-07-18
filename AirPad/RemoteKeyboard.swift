@@ -140,7 +140,26 @@ struct RemoteKeyboardInput: UIViewRepresentable {
             text = sentinel
         }
 
+        // iOS dictation continuously EDITS the text it inserted (rewriting
+        // words as recognition refines). Resetting the sentinel mid-dictation
+        // yanks that text away and kills the session after a few words — so
+        // while dictating we let text accumulate untouched and flush it as one
+        // type_text when dictation ends.
+        private var wasDictating = false
+        private var isDictating: Bool {
+            textInputMode?.primaryLanguage == "dictation"
+        }
+
         @objc private func editingChanged() {
+            if isDictating {
+                wasDictating = true
+                return  // hands off: dictation owns the text until it ends
+            }
+            if wasDictating {
+                wasDictating = false
+                flushDictationText()
+                return
+            }
             let current = text ?? ""
             defer {
                 if current != sentinel { text = sentinel }
@@ -154,6 +173,29 @@ struct RemoteKeyboardInput: UIViewRepresentable {
                 let typed = current.replacingOccurrences(of: sentinel, with: "")
                 if !typed.isEmpty { forward(typed) }
             }
+        }
+
+        private func flushDictationText() {
+            let dictated = (text ?? "").replacingOccurrences(of: sentinel, with: "")
+            if !dictated.isEmpty {
+                NetworkManager.shared.sendTypeText(dictated)
+            }
+            resetSentinel()
+        }
+
+        // UITextInput dictation hooks. Flushing is idempotent (resetSentinel
+        // empties the buffer), so it's safe if both fire — or if neither does
+        // (editingChanged's wasDictating check catches that).
+        override func insertDictationResult(_ dictationResult: [UIDictationPhrase]) {
+            super.insertDictationResult(dictationResult)  // finalize the text
+            wasDictating = false
+            flushDictationText()
+        }
+
+        override func dictationRecordingDidEnd() {
+            super.dictationRecordingDidEnd()
+            wasDictating = false
+            flushDictationText()
         }
 
         private func forward(_ text: String) {

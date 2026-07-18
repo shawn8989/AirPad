@@ -154,11 +154,11 @@ struct MacSwitcherView: View {
                         VStack(spacing: 2) {
                             Image(systemName: "display")
                                 .foregroundStyle(desktop.isActive ? Color.accentColor : .secondary)
-                            if windowCount > 0 {
-                                Text("\(windowCount) app\(windowCount == 1 ? "" : "s")")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
+                            // Previews are real screenshots cached per visit.
+                            Text("Visit once\nto preview")
+                                .font(.caption2)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.tertiary)
                         }
                     }
                     RoundedRectangle(cornerRadius: 10)

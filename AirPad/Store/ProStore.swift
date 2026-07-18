@@ -6,7 +6,7 @@
 //  full-featured trial. The trial start date lives in the Keychain so
 //  deleting and reinstalling the app doesn't reset the clock.
 //
-//  Pro features: Air Mouse, Hand Mouse, Media & System remote, Dictation,
+//  Pro features: Air Mouse, Hand Mouse, Media & System remote, voice typing,
 //  Live Screen, Apps, and multi-Mac switching. Trackpad, keyboard, and the
 //  first Mac are free forever.
 //

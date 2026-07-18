@@ -343,6 +343,17 @@ struct MainControlView: View {
 
     private var quickActions: some View {
         HStack(spacing: 10) {
+            // Desktop hop, one tap from the trackpad — no swipe gymnastics.
+            Button {
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(minWidth: 30)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Previous desktop")
+
             Button {
                 NetworkManager.shared.sendClick(button: "left")
             } label: {
@@ -354,7 +365,7 @@ struct MainControlView: View {
             Button {
                 NetworkManager.shared.sendClick(button: "right")
             } label: {
-                Label("Right Click", systemImage: "cursorarrow.rays")
+                Label("Right", systemImage: "cursorarrow.rays")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -362,10 +373,20 @@ struct MainControlView: View {
             Button {
                 showKeyboard = true
             } label: {
-                Label("Keyboard", systemImage: "keyboard")
+                Label("Keys", systemImage: "keyboard")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+
+            Button {
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(minWidth: 30)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Next desktop")
         }
         .lineLimit(1)
     }
@@ -377,7 +398,6 @@ struct MainControlView: View {
             modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
             modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
             modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
-            modeTile("Dictate", "mic.fill", pro: true) { DictationView() }
             modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
             modeTile("Settings", "gearshape") { SettingsView() }
             modeTile("Help", "questionmark.circle") { HelpView() }

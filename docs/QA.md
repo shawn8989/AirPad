@@ -60,7 +60,7 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 - [ ] Custom gesture does NOT misfire during normal pointing for 60s.
 - [ ] Pinch behaves the same at ~1ft and ~3ft from the camera.
 
-## 5. Media, clipboard, dictation (4 min)
+## 5. Media, clipboard, voice typing (4 min)
 
 - [ ] Volume up/down/mute show the macOS HUD; play/pause controls Music.
 - [ ] **Now Playing:** play a song in Music → title/artist appear within ~3s;
@@ -69,7 +69,8 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 - [ ] Presentation: prev/next arrows work in a Keynote/Slides deck.
 - [ ] Clipboard: send phone→Mac (⌘V pastes it); Type on Mac types it;
       fetch Mac→phone (paste in Notes on the phone).
-- [ ] Dictation: dictate, review, Type on Mac lands at the cursor.
+- [ ] Voice typing: open the keyboard, tap the mic key, dictate a full
+      paragraph — the text lands on the Mac when dictation ends (no cutoff).
 - [ ] Lock Mac Screen asks to confirm, then locks.
 - [ ] AirBridge Activity tab logged the clipboard transfers.
 
