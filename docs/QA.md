@@ -133,15 +133,27 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 - [ ] Pair with both; picker switches on the fly; per-Mac auth works after
       relaunching both apps.
 
-## 8b. TV Mode (3 min, needs an AirPlay TV or HDMI adapter)
+## 8b. Mac on the TV (5 min, needs an AirPlay TV)
 
-- [ ] Control Center → Screen Mirroring → TV: the TV shows the MAC's desktop
-      fullscreen (not a mirror of the phone) within ~2s of connecting.
-- [ ] Phone trackpad moves the cursor visible on the TV; Live Screen shows the
-      "Showing on TV" banner and still controls normally.
-- [ ] Leave the phone's Live Screen while mirroring → TV picture stays.
-- [ ] Stop mirroring → phone behaves exactly as before; stream stops when
-      nothing needs it.
+Recommended path — mirror FROM the Mac:
+
+- [ ] Home → TV Setup: opens Live Screen with the mirror tip banner; the tip
+      dismisses with the X and doesn't come back until re-entering via TV Setup.
+- [ ] Using the pointer, click the Mac's Control Center → Screen Mirroring →
+      TV: the TV shows the Mac natively; phone navigates all pages freely with
+      the TV unaffected.
+- [ ] TV button in Live Screen opens the setup sheet; "Guide me" shows the tip.
+- [ ] Media page → Mac Sound Output: lists the Mac's speakers with the current
+      one checked; tapping another moves the Mac's audio within ~2s and the
+      checkmark follows; AirBridge Activity logs "Audio output → …".
+
+Phone-side TV Mode (fallback; HDMI adapter or AirPlay if iOS allows the claim):
+
+- [ ] TV shows the MAC's desktop fullscreen (not a phone mirror) within ~2s;
+      "TV connected" chip appears on the home screen.
+- [ ] Leave the phone's Live Screen while claimed → TV picture stays.
+- [ ] Stop mirroring/unplug → phone behaves exactly as before; stream stops
+      when nothing needs it.
 
 ## 9. iPad & extras (2 min, iPad optional)
 

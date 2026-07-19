@@ -40,8 +40,10 @@ struct HelpView: View {
                 helpRow("Lock Mac Screen asks for confirmation first.")
             }
 
-            Section("TV Mode") {
-                helpRow("Mirror your iPhone to a TV (the TV button in Live Screen, Control Center → Screen Mirroring, or an HDMI adapter): the TV shows your Mac's screen fullscreen while the phone stays your controller — use the trackpad or Live Screen to drive what you see. Great when the Mac is in another room.")
+            Section("Show your Mac on a TV") {
+                helpRow("Best way: mirror FROM THE MAC. Tap TV Setup (or the TV button in Live Screen) and follow the tip — use the pointer to click the Mac's Control Center → Screen Mirroring → your TV. The TV gets the Mac at full quality with sound, and the phone stays free for any mode.")
+                helpRow("The Mac's sound can go somewhere else entirely — the Media page has a speaker picker that bounces audio between the TV, headphones, and the Mac's speakers.")
+                helpRow("Alternatives: plug the phone into the TV with an HDMI adapter (the TV shows only the Mac's screen while the phone controls), or mirror the phone from its Control Center — though on some iOS versions the TV then follows you between pages.")
                 helpRow("Live Screen controls: Pointer = trackpad on the video, Touch = tap exactly what you see, View = zoom/pan without clicking. The Desktop ◀ ▶ buttons switch desktops and the picture follows.")
             }
 

@@ -3,6 +3,10 @@ import UIKit
 import Combine
 
 struct LiveScreenView: View {
+    /// When true (the home screen's "TV Setup" tile), the guided
+    /// mirror-from-Mac tip shows as soon as the live picture is up.
+    var startWithMirrorTip: Bool = false
+
     @StateObject private var network = NetworkManager.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -24,6 +28,7 @@ struct LiveScreenView: View {
     @State private var showShortcuts = false
     @State private var showOptions = false
     @State private var showTVHelp = false
+    @State private var showMirrorTip = false
 
     // Zoom & pan (view mode)
     @State private var zoom: CGFloat = 1.0
@@ -133,6 +138,41 @@ struct LiveScreenView: View {
             }
             .zIndex(2)
 
+            // Guided "mirror the Mac to the TV" tip: walks the user through
+            // starting AirPlay ON THE MAC using the live picture + pointer.
+            if showMirrorTip {
+                VStack {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "tv.badge.wifi")
+                            .font(.title3)
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Mirror your Mac to the TV")
+                                .font(.caption.weight(.bold))
+                            Text("On the Mac's screen above, click the Control Center icon (two toggles, top-right of the menu bar) → Screen Mirroring → pick your TV. Then watch the TV and control from any page here.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button {
+                            withAnimation { showMirrorTip = false }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 420)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.top, 52)
+                    .padding(.horizontal, 12)
+                    Spacer()
+                }
+                .zIndex(3)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // TV Mode: the picture is on the television; this screen is the remote.
             if TVSceneManager.shared.tvConnected {
                 VStack {
@@ -176,6 +216,7 @@ struct LiveScreenView: View {
         .onAppear {
             // Start streaming automatically when entering if not already
             if !isStreaming { startStreaming() }
+            if startWithMirrorTip { showMirrorTip = true }
         }
         .onDisappear { stopStreamingIfNeeded() }
         .onReceive(network.$liveImage) { image in
@@ -204,11 +245,7 @@ struct LiveScreenView: View {
         }
         .sheet(isPresented: $showShortcuts) { AppShortcutsView() }
         .sheet(isPresented: $showOptions) { optionsSheet }
-        .alert("Show your Mac on a TV", isPresented: $showTVHelp) {
-            Button("OK") {}
-        } message: {
-            Text("Open Control Center (swipe down from the top-right corner), tap Screen Mirroring, and choose your TV. The TV will show your Mac's screen fullscreen while this phone stays the controller. (Apple only allows starting screen mirroring from Control Center.)")
-        }
+        .sheet(isPresented: $showTVHelp) { tvHelpSheet }
         .onChange(of: isStreaming) { _, streaming in
             DispatchQueue.main.async {
                 UIApplication.shared.isIdleTimerDisabled = streaming
@@ -380,6 +417,62 @@ struct LiveScreenView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showOptions = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// TV setup guide. The recommended path is mirroring FROM THE MAC — the
+    /// phone stays completely free, the TV gets native AirPlay quality, and
+    /// the Mac's audio comes along. Phone-side mirroring is the fallback.
+    private var tvHelpSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Mirror from your Mac", systemImage: "star.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Use the live picture and pointer to click the Mac's Control Center icon (top-right of its menu bar) → Screen Mirroring → choose your TV. The TV shows the Mac at full quality with sound, and this phone stays free to use any mode.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button {
+                        showTVHelp = false
+                        withAnimation { showMirrorTip = true }
+                    } label: {
+                        Label("Guide me on the live screen", systemImage: "hand.point.up.left")
+                    }
+                } header: {
+                    Text("Best way")
+                }
+
+                Section("Sound") {
+                    Text("The Mac's audio can go to a different speaker than the TV — use the speaker picker on the Media page.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Other ways") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Wired HDMI adapter", systemImage: "cable.connector")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Plug this phone into the TV with an HDMI adapter: the TV shows only the Mac's screen (TV Mode) while the phone stays the controller.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Label("Phone screen mirroring", systemImage: "iphone.badge.play")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Control Center on this phone → Screen Mirroring → your TV. On some iOS versions the TV mirrors everything the phone shows, so it will follow you between pages.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Show your Mac on a TV")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showTVHelp = false }
                 }
             }
         }

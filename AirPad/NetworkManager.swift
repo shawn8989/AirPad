@@ -69,6 +69,16 @@ final class NetworkManager: ObservableObject {
     }
     @Published var nowPlaying: NowPlayingInfo?
 
+    // The Mac's sound output devices (speakers, TV, headphones) for the
+    // remote speaker picker. Sent by AirBridge as "audio_devices".
+    struct AudioOutputDevice: Identifiable, Equatable {
+        var uid: String
+        var name: String
+        var isCurrent: Bool
+        var id: String { uid }
+    }
+    @Published var audioOutputs: [AudioOutputDevice] = []
+
     // True while the Mac reports keyboard focus is in a text field (drives
     // the auto keyboard popup). Set by the "text_focus" message.
     @Published var macTextFieldFocused = false
@@ -696,6 +706,17 @@ final class NetworkManager: ObservableObject {
                     DispatchQueue.main.async { self.nowPlaying = info }
                 }
 
+            case "audio_devices":
+                if let payload = obj?["payload"] as? [String: Any],
+                   let list = payload["devices"] as? [[String: Any]] {
+                    let devices = list.compactMap { d -> AudioOutputDevice? in
+                        guard let uid = d["uid"] as? String, let name = d["name"] as? String else { return nil }
+                        return AudioOutputDevice(uid: uid, name: name,
+                                                 isCurrent: d["isCurrent"] as? Bool ?? false)
+                    }
+                    DispatchQueue.main.async { self.audioOutputs = devices }
+                }
+
             case "pair_qr_ok":
                 // The Mac accepted our QR proof: store the derived per-Mac
                 // secret (matches what the server stored) and we're done —
@@ -1047,6 +1068,17 @@ final class NetworkManager: ObservableObject {
     // "now_playing" and lands in the nowPlaying published property.
     func requestNowPlaying() {
         try? send(type: "now_playing_get", payload: [:])
+    }
+
+    // Ask the Mac for its sound output devices; reply arrives as
+    // "audio_devices" and lands in audioOutputs.
+    func requestAudioDevices() {
+        try? send(type: "request_audio_devices", payload: [:])
+    }
+
+    // Switch the Mac's sound output (speakers / TV / headphones) by device UID.
+    func sendSetAudioDevice(uid: String, name: String) {
+        try? send(type: "set_audio_device", payload: ["uid": uid, "name": name])
     }
 
     // Set the Mac's output volume (0-100).

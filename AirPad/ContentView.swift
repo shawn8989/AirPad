@@ -417,6 +417,7 @@ struct MainControlView: View {
             modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
             modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
             modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
+            modeTile("TV Setup", "tv", pro: true) { LiveScreenView(startWithMirrorTip: true) }
             modeTile("Settings", "gearshape") { SettingsView() }
             modeTile("Help", "questionmark.circle") { HelpView() }
         }
