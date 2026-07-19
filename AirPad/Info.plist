@@ -39,11 +39,22 @@
              system falls back to mirroring the phone. -->
         <key>UISceneConfigurations</key>
         <dict>
+            <!-- Registered under BOTH role spellings: iOS renamed the external
+                 display role and different versions look up different keys. -->
             <key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
             <array>
                 <dict>
                     <key>UISceneConfigurationName</key>
                     <string>TV</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>$(PRODUCT_MODULE_NAME).TVSceneDelegate</string>
+                </dict>
+            </array>
+            <key>UIWindowSceneSessionRoleExternalDisplay</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>TV-Legacy</string>
                     <key>UISceneDelegateClassName</key>
                     <string>$(PRODUCT_MODULE_NAME).TVSceneDelegate</string>
                 </dict>

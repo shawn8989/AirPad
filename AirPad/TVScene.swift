@@ -26,12 +26,16 @@ final class AirPadAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      configurationForConnecting connectingSceneSession: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
-        if connectingSceneSession.role == .windowExternalDisplayNonInteractive {
-            let config = UISceneConfiguration(name: "TV", sessionRole: connectingSceneSession.role)
+        // Both role spellings: iOS renamed the external-display role and
+        // versions differ in which one they use.
+        let role = connectingSceneSession.role
+        if role == .windowExternalDisplayNonInteractive
+            || role.rawValue == "UIWindowSceneSessionRoleExternalDisplay" {
+            let config = UISceneConfiguration(name: "TV", sessionRole: role)
             config.delegateClass = TVSceneDelegate.self
             return config
         }
-        return UISceneConfiguration(name: "Default", sessionRole: connectingSceneSession.role)
+        return UISceneConfiguration(name: "Default", sessionRole: role)
     }
 }
 
