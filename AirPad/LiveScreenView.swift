@@ -30,6 +30,10 @@ struct LiveScreenView: View {
     @State private var showTVHelp = false
     @State private var showMirrorTip = false
 
+    // Fullscreen chrome auto-hide (windowed mode always shows it).
+    @State private var chromeVisible = true
+    @State private var chromeHideWorkItem: DispatchWorkItem?
+
     // Zoom & pan (view mode)
     @State private var zoom: CGFloat = 1.0
     @State private var lastZoom: CGFloat = 1.0
@@ -56,25 +60,21 @@ struct LiveScreenView: View {
                     .allowsHitTesting(false)
 
                 if let img = network.liveImage {
+                    // The zoom/pan set in View mode STAYS applied in Pointer and
+                    // Touch — otherwise lining up a region then switching to
+                    // control it snapped the picture back and made View useless.
+                    // Only the zoom/pan gestures are View-only.
                     GeometryReader { _ in
-                        if controlMode == .view {
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                                .scaleEffect(zoom)
-                                .offset(offset)
-                                .gesture(viewGestures())
-                                .animation(.snappy(duration: 0.15), value: zoom)
-                                .animation(.snappy(duration: 0.15), value: offset)
-                        } else {
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                        }
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                            .scaleEffect(zoom)
+                            .offset(offset)
+                            .animation(.snappy(duration: 0.15), value: zoom)
+                            .animation(.snappy(duration: 0.15), value: offset)
+                            .gesture(controlMode == .view ? viewGestures() : nil)
                     }
                 } else {
                     VStack(spacing: 8) {
@@ -101,7 +101,9 @@ struct LiveScreenView: View {
                 TrackpadGestureBridgeOverlay(isActive: controlMode == .pointer)
                 AbsoluteTouchOverlay(isActive: controlMode == .touch,
                                      imageSize: network.liveImage?.size,
-                                     fill: fitMode == .fill)
+                                     fill: fitMode == .fill,
+                                     zoom: zoom,
+                                     offset: offset)
                 EdgeGestureZones(isActive: isFullscreen && controlMode == .pointer)
                 // The remote keyboard itself is hosted once at the root
                 // (ContentView) — this screen only toggles KeyboardPresenter.
@@ -110,9 +112,10 @@ struct LiveScreenView: View {
             .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 16))
             .padding(isFullscreen ? 0 : 12)
             .ignoresSafeArea(edges: isFullscreen ? .all : [])
-            // Persistent chrome: nothing auto-hides anymore — the controls
-            // vanished mid-reach and felt broken. Top row: back (fullscreen),
-            // FPS, Options. Bottom: the labeled control bar.
+            // Chrome: always visible in windowed mode. In FULL SCREEN it fades
+            // out after a few idle seconds so it stops covering the Mac's
+            // screen, and any touch brings it straight back — the old build
+            // either hid it permanently or blocked the picture forever.
             VStack {
                 HStack(spacing: 8) {
                     if isFullscreen {
@@ -136,7 +139,35 @@ struct LiveScreenView: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, isFullscreen ? 12 : 4)
             }
+            .opacity(chromeVisible ? 1 : 0)
+            .allowsHitTesting(chromeVisible)
+            .animation(.easeInOut(duration: 0.25), value: chromeVisible)
             .zIndex(2)
+
+            // When the chrome is hidden, this slim handle stays as the visible
+            // affordance (and a direct way back) so the controls are never a
+            // secret. Tapping anywhere on the picture also brings them back.
+            if !chromeVisible {
+                VStack {
+                    Spacer()
+                    Button {
+                        revealChrome()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.up")
+                            Text("Controls")
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .opacity(0.75)
+                    }
+                    .padding(.bottom, isFullscreen ? 12 : 6)
+                }
+                .transition(.opacity)
+                .zIndex(3)
+            }
 
             // Guided "mirror the Mac to the TV" tip: walks the user through
             // starting AirPlay ON THE MAC using the live picture + pointer.
@@ -253,9 +284,13 @@ struct LiveScreenView: View {
         }
         .onChange(of: quality) { _, _ in scheduleRestartDebounced() }
         .onChange(of: maxWidth) { _, _ in scheduleRestartDebounced() }
-        .onChange(of: network.debugMouseMoveCount) { _, _ in showDebugAndAutoHide() }
-        .onChange(of: network.debugScrollCount) { _, _ in showDebugAndAutoHide() }
-        .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide() }
+        // Any interaction with the Mac counts as "the user is here": it shows
+        // the chrome and restarts the idle timer.
+        .onChange(of: network.debugMouseMoveCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
+        .onChange(of: network.debugScrollCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
+        .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
+        .onChange(of: isFullscreen) { _, _ in revealChrome() }
+        .onChange(of: controlMode) { _, _ in revealChrome() }
     }
 
     // MARK: - Control bar (persistent, labeled)
@@ -394,11 +429,22 @@ struct LiveScreenView: View {
                     Toggle("Full screen", isOn: Binding(
                         get: { isFullscreen },
                         set: { newValue in withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = newValue } }))
-                    if controlMode == .view {
-                        Button("Reset zoom") {
-                            withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero }
-                        }
+                    // Available in every mode now that zoom persists across them.
+                    Button("Reset zoom (this picture)") {
+                        withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero }
                     }
+                    .disabled(abs(zoom - 1) < 0.01 && offset == .zero)
+                } footer: {
+                    Text("In full screen the controls fade out after a few seconds so they stop covering the Mac — touch the screen or tap Controls to bring them back.")
+                }
+
+                Section {
+                    Button("Reset zoom on the Mac (⌘0)") {
+                        NetworkManager.shared.sendKeyCombo(29, command: true, option: false,
+                                                           control: false, shift: false)
+                    }
+                } footer: {
+                    Text("Sends ⌘0 to the app in front on the Mac — use it if an app was left zoomed in.")
                 }
 
                 Section {
@@ -484,6 +530,7 @@ struct LiveScreenView: View {
         let mag = MagnificationGesture()
             .onChanged { value in
                 zoom = (lastZoom * value).clamped(to: 0.5...4.0)
+                revealChrome()
             }
             .onEnded { _ in
                 lastZoom = zoom
@@ -493,6 +540,7 @@ struct LiveScreenView: View {
             .onChanged { value in
                 offset = CGSize(width: lastOffset.width + value.translation.width,
                                  height: lastOffset.height + value.translation.height)
+                revealChrome()
             }
             .onEnded { _ in
                 lastOffset = offset
@@ -545,6 +593,20 @@ struct LiveScreenView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
+    /// Shows the controls and restarts the idle countdown. In windowed mode the
+    /// chrome simply stays up — only full screen hides it, and only after the
+    /// user has stopped interacting for a few seconds.
+    private func revealChrome() {
+        chromeHideWorkItem?.cancel()
+        if !chromeVisible { withAnimation(.easeInOut(duration: 0.2)) { chromeVisible = true } }
+        guard isFullscreen else { return }
+        let work = DispatchWorkItem {
+            withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+        }
+        chromeHideWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
+    }
+
     private func showDebugAndAutoHide() {
         showDebugHUD = true
         hudHideWorkItem?.cancel()
@@ -569,7 +631,9 @@ private struct TrackpadGestureBridgeOverlay: View {
         TrackpadGestureBridge(pointerSensitivity: pointerSensitivity,
                                naturalScroll: naturalScroll,
                                hapticsEnabled: hapticsEnabled,
-                               showTouches: showTouches)
+                               showTouches: showTouches,
+                               // A pinch here zooms the picture, never the Mac.
+                               pinchZoomsMac: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .allowsHitTesting(isActive)

@@ -16,15 +16,19 @@ struct AbsoluteTouchOverlay: UIViewRepresentable {
     var isActive: Bool
     var imageSize: CGSize?
     var fill: Bool  // true when the stream is aspect-FILL, false for aspect-fit
+    // The picture keeps whatever zoom/pan View mode set, so taps must be
+    // mapped back through that transform or clicks land somewhere else.
+    var zoom: CGFloat = 1
+    var offset: CGSize = .zero
 
     func makeUIView(context: Context) -> AbsoluteTouchView {
         let v = AbsoluteTouchView()
-        v.configure(imageSize: imageSize, fill: fill)
+        v.configure(imageSize: imageSize, fill: fill, zoom: zoom, offset: offset)
         return v
     }
 
     func updateUIView(_ uiView: AbsoluteTouchView, context: Context) {
-        uiView.configure(imageSize: imageSize, fill: fill)
+        uiView.configure(imageSize: imageSize, fill: fill, zoom: zoom, offset: offset)
         uiView.isUserInteractionEnabled = isActive
         uiView.alpha = isActive ? 1 : 0
     }
@@ -33,6 +37,8 @@ struct AbsoluteTouchOverlay: UIViewRepresentable {
 final class AbsoluteTouchView: UIView {
     private var imageSize: CGSize?
     private var fill = false
+    private var zoom: CGFloat = 1
+    private var panOffset: CGSize = .zero
     private var lastMoveSent: TimeInterval = 0
 
     // Hold state: nil = not holding, false = holding in place (right click on
@@ -72,26 +78,34 @@ final class AbsoluteTouchView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(imageSize: CGSize?, fill: Bool) {
+    func configure(imageSize: CGSize?, fill: Bool, zoom: CGFloat, offset: CGSize) {
         self.imageSize = imageSize
         self.fill = fill
+        self.zoom = max(zoom, 0.01)
+        self.panOffset = offset
     }
 
     // MARK: - Coordinate mapping
 
     /// Maps a view point to display-normalized (0...1) coordinates, accounting
-    /// for the letterboxing/cropping of aspect-fit / aspect-fill rendering.
+    /// for the letterboxing/cropping of aspect-fit / aspect-fill rendering AND
+    /// the current zoom/pan (SwiftUI scales about the view's center, then
+    /// translates — undo both before the letterbox math).
     private func normalized(_ point: CGPoint) -> CGPoint? {
         guard bounds.width > 0, bounds.height > 0,
               let image = imageSize, image.width > 0, image.height > 0 else { return nil }
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let untransformed = CGPoint(
+            x: (point.x - center.x - panOffset.width) / zoom + center.x,
+            y: (point.y - center.y - panOffset.height) / zoom + center.y)
         let scale = fill
             ? max(bounds.width / image.width, bounds.height / image.height)
             : min(bounds.width / image.width, bounds.height / image.height)
         let drawnSize = CGSize(width: image.width * scale, height: image.height * scale)
         let origin = CGPoint(x: (bounds.width - drawnSize.width) / 2,
                              y: (bounds.height - drawnSize.height) / 2)
-        let x = (point.x - origin.x) / drawnSize.width
-        let y = (point.y - origin.y) / drawnSize.height
+        let x = (untransformed.x - origin.x) / drawnSize.width
+        let y = (untransformed.y - origin.y) / drawnSize.height
         guard x >= -0.01, x <= 1.01, y >= -0.01, y <= 1.01 else { return nil }  // outside the image
         return CGPoint(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
     }
