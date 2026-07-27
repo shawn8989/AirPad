@@ -74,7 +74,8 @@ struct LiveScreenView: View {
                             .offset(offset)
                             .animation(.snappy(duration: 0.15), value: zoom)
                             .animation(.snappy(duration: 0.15), value: offset)
-                            .gesture(controlMode == .view ? viewGestures() : nil)
+                            .gesture(viewGestures(),
+                                     including: controlMode == .view ? .gesture : .none)
                     }
                 } else {
                     VStack(spacing: 8) {
@@ -421,7 +422,7 @@ struct LiveScreenView: View {
                     }
                 }
 
-                Section("Display") {
+                Section {
                     Picker("Scaling", selection: $fitMode) {
                         Text("Fit (whole screen)").tag(ContentMode.fit)
                         Text("Fill (crop edges)").tag(ContentMode.fill)
@@ -434,6 +435,8 @@ struct LiveScreenView: View {
                         withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero }
                     }
                     .disabled(abs(zoom - 1) < 0.01 && offset == .zero)
+                } header: {
+                    Text("Display")
                 } footer: {
                     Text("In full screen the controls fade out after a few seconds so they stop covering the Mac — touch the screen or tap Controls to bring them back.")
                 }
