@@ -48,9 +48,25 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
 ## 4. Hand Mouse + Gesture Studio (5 min)
 
+Pose latch & calibration:
+
+- [ ] Calibrate my hand: 2s open-hand capture completes, haptic fires, and
+      poses immediately feel less touchy. Survives an app relaunch.
+- [ ] "Use default hand sizing" reverts cleanly.
+- [ ] **The lock:** while pointing, deliberately relax/wobble the hand and
+      curl fingers slightly — the pose badge stays on the SAME pose and the
+      cursor keeps tracking without jumping.
+- [ ] Deliberately forming a different gesture fills the badge ring, then
+      switches within roughly the preset's time (Steady slowest, Quick fastest).
+- [ ] Steady / Balanced / Quick each change how hard it is to knock the pose
+      loose; the setting persists.
+- [ ] Pinch-to-click works while the latched pose is Pointer, Palm, AND
+      Scroll — clicking never requires re-forming a pointer first.
+- [ ] A pinch held in an open palm does NOT also fire a desktop swipe.
+
 - [ ] Relaxed hand steers the cursor; hovering a target is steady (no jitter).
 - [ ] Pinch = click (no cursor jump when pinching); pinch-hold = drag.
-- [ ] Pose changes don't jump the cursor (badge + border update).
+- [ ] Pose changes don't jump the cursor (badge + ring update).
 - [ ] Fist-hold grabs (drag a window by moving the fist); open hand releases.
 - [ ] Open palm: swipe = desktop switch; hold still ~1s = Mission Control.
 - [ ] V-sign scroll; thumbs-up = play/pause; shaka = next desktop (defaults).

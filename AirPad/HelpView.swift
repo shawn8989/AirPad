@@ -30,7 +30,9 @@ struct HelpView: View {
                 gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control. Palm-hold, thumbs-up, and shaka are remappable in the gesture settings — map them to any action, like opening an app.")
                 gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
                 gestureRow("wand.and.stars", "Gesture Studio", "Record your OWN hand poses (tap the wand on the Hand Mouse screen) and map them to shortcuts, media keys, desktops, or typed text.")
-                helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The border color shows the detected pose. Video is processed on-device and never transmitted.")
+                gestureRow("lock.fill", "Gestures lock in", "Once a pose is recognized it STAYS locked — your hand can drift, relax, or wobble without changing it. To switch, hold the new gesture clearly for a moment: the ring on the pose badge fills as it takes over. Choose Steady, Balanced, or Quick in the gesture settings.")
+                gestureRow("hand.raised.fingers.spread", "Calibrate", "Two seconds with your hand open teaches AirPad your finger proportions — the single biggest improvement if poses feel touchy. Gesture settings → Calibrate my hand.")
+                helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The badge shows the locked pose. Video is processed on-device and never transmitted.")
             }
 
             Section("Media & System") {
