@@ -43,6 +43,29 @@ struct HandTuning: Equatable {
         default: return .balanced
         }
     }
+
+    /// How hard it is to knock the user OUT of a pose, per pose. The lock
+    /// should protect continuous actions and stay out of the way of one-shots:
+    ///
+    /// - Steering and dragging run for seconds while the hand naturally drifts,
+    ///   so they hold hardest — and losing a drag mid-window (the fist relaxing
+    ///   a little) is the worst failure in the app, so an active drag holds
+    ///   hardest of all.
+    /// - Palm and scroll are continuous too, but a wrong read there is cheap.
+    /// - Thumbs-up / shaka fire once and are done; making them sticky just
+    ///   strands you in a pose you're finished with.
+    ///
+    /// Clicking isn't here at all: a pinch is a modifier on whatever pose you
+    /// already hold, not a pose of its own, so it is never latched.
+    static func stickiness(for pose: HandPose, dragging: Bool) -> Double {
+        switch pose {
+        case .pointer:            return 1.35
+        case .fist:               return dragging ? 2.2 : 1.35
+        case .palm, .scroll:      return 1.0
+        case .thumbsUp, .shaka:   return 0.65
+        case .none:               return 0.5
+        }
+    }
 }
 
 /// Per-user finger geometry, measured from a held open hand. Values are the

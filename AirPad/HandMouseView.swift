@@ -157,6 +157,8 @@ struct HandMouseView: View {
     @AppStorage("handGestureThumbsUp") private var thumbsUpEnabled = true
     @AppStorage("handGestureShaka") private var shakaEnabled = true
     @AppStorage("handTuningPreset") private var tuningPreset = "balanced"
+    @AppStorage("handLockStrength") private var lockStrength: Double = 1.0
+    @AppStorage("handSwitchDelay") private var switchDelay: Double = 0.40
 
     @StateObject private var adapter = HandMouseAdapter()
     @State private var showGestureSheet = false
@@ -281,7 +283,16 @@ struct HandMouseView: View {
         .onChange(of: fistDragEnabled) { _, _ in pushConfig() }
         .onChange(of: thumbsUpEnabled) { _, _ in pushConfig() }
         .onChange(of: shakaEnabled) { _, _ in pushConfig() }
-        .onChange(of: tuningPreset) { _, _ in pushConfig() }
+        .onChange(of: tuningPreset) { _, preset in
+            // Presets are shortcuts that write the sliders — after that the
+            // sliders are the source of truth, so fine-tuning always sticks.
+            let t = HandTuning.named(preset)
+            switchDelay = t.evidence
+            lockStrength = preset == "steady" ? 1.4 : (preset == "quick" ? 0.7 : 1.0)
+            pushConfig()
+        }
+        .onChange(of: lockStrength) { _, _ in pushConfig() }
+        .onChange(of: switchDelay) { _, _ in pushConfig() }
         .onChange(of: adapter.calibrationDone) { _, done in
             // Re-push so the freshly measured calibration takes effect at once.
             if done { pushConfig() }
@@ -334,10 +345,31 @@ struct HandMouseView: View {
                         Text("Quick").tag("quick")
                     }
                     .pickerStyle(.segmented)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("Lock strength")
+                            Spacer()
+                            Text(String(format: "%.1f×", lockStrength))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $lockStrength, in: 0.5...2.0, step: 0.1)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("Switch delay")
+                            Spacer()
+                            Text(String(format: "%.2fs", switchDelay))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $switchDelay, in: 0.15...1.00, step: 0.05)
+                    }
                 } header: {
                     Text("Feel")
                 } footer: {
-                    Text("A gesture stays locked in until a different one is clearly and steadily held — your hand can drift without changing pose. Steady holds hardest; Quick switches soonest.")
+                    Text("A gesture stays locked in until a different one is clearly and steadily held — your hand can drift without changing pose. Lock strength is how hard a pose resists being knocked loose; switch delay is how long a new gesture must be held. Pointing and dragging lock harder than the rest automatically, and pinch-to-click is never locked. Picking a preset resets both sliders.")
                 }
 
                 Section {
@@ -423,7 +455,11 @@ struct HandMouseView: View {
         c.thumbsUpEnabled = thumbsUpEnabled
         c.shakaEnabled = shakaEnabled
         c.customTemplates = GestureStore.shared.enabledTemplates
-        c.tuning = HandTuning.named(tuningPreset)
+        var t = HandTuning.named(tuningPreset)
+        t.evidence = switchDelay
+        t.dwell = switchDelay * 0.85
+        c.tuning = t
+        c.lockStrength = lockStrength
         c.calibration = HandCalibration.load()
         adapter.config = c
     }

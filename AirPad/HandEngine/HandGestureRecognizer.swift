@@ -70,6 +70,8 @@ struct HandGestureConfig {
     var customTemplates: [UUID: [Double]] = [:]
     /// How readily the latch opens.
     var tuning: HandTuning = .balanced
+    /// User-facing multiplier on every lock requirement (1.0 = the preset).
+    var lockStrength: Double = 1.0
     /// This user's measured finger geometry.
     var calibration: HandCalibration = .default
 }
@@ -116,6 +118,10 @@ final class HandGestureRecognizer {
     // Hold-gesture latches (fire once per pose entry)
     private var holdFired = false
     private var dragActive = false
+    /// True once a one-shot gesture (thumbs-up, shaka, palm-hold) has fired in
+    /// the current pose: the latch then releases almost freely so you aren't
+    /// stranded in a gesture whose job is already done.
+    private var oneShotFired = false
 
     // Custom template matching (Gesture Studio)
     private var customMatchID: UUID?
@@ -173,7 +179,7 @@ final class HandGestureRecognizer {
             trackMovement(hand)
         case .fist:
             trackMovement(hand)   // fist moves the cursor too (drag naturally)
-            fireAfterHold(0.4, enabled: config.fistDragEnabled) {
+            fireAfterHold(0.4, enabled: config.fistDragEnabled, oneShot: false) {
                 self.dragActive = true
                 self.onEvent?(.fistDragBegan)
             }
@@ -204,6 +210,7 @@ final class HandGestureRecognizer {
         lastPalmX = nil
         palmTravel = 0
         holdFired = false
+        oneShotFired = false
         emitCandidate(.none, 0)
         onPoseChanged?(.none)
     }
@@ -390,15 +397,31 @@ final class HandGestureRecognizer {
             return
         }
 
+        // How hard THIS pose holds on. Steering and dragging resist drift;
+        // a one-shot that has already fired lets go almost immediately, so
+        // you can fire it and get straight back to pointing.
+        let sticky: Double
+        if oneShotFired {
+            sticky = 0.35
+        } else {
+            sticky = HandTuning.stickiness(for: currentPose, dragging: dragActive)
+                * config.lockStrength
+        }
+        let dwell = config.tuning.dwell * sticky
+        let evidence = config.tuning.evidence * sticky
+        // Cap the margin: an arbitrarily high bar could make a pose impossible
+        // to leave, which is worse than a stray switch.
+        let margin = min(config.tuning.margin * sticky, 0.32)
+
         // Gate 1: dwell — ignore everything right after a commit.
-        guard now - poseEnterTime >= config.tuning.dwell else {
+        guard now - poseEnterTime >= dwell else {
             if candidatePose != .none { emitCandidate(.none, 0) }
             candidatePose = .none
             return
         }
 
         // Gate 3 (checked continuously): a clear lead, not a tie.
-        guard best.score - currentScore >= config.tuning.margin else {
+        guard best.score - currentScore >= margin else {
             if candidatePose != .none { emitCandidate(.none, 0) }
             candidatePose = .none
             return
@@ -409,7 +432,7 @@ final class HandGestureRecognizer {
             candidatePose = best.pose
             candidateSince = now
         }
-        let progress = min((now - candidateSince) / config.tuning.evidence, 1)
+        let progress = min((now - candidateSince) / max(evidence, 0.05), 1)
         emitCandidate(best.pose, progress)
         if progress >= 1 {
             commit(best.pose, at: now)
@@ -422,6 +445,7 @@ final class HandGestureRecognizer {
         candidatePose = .none
         poseEnterTime = now
         holdFired = false
+        oneShotFired = false
         lastPalmX = nil
         palmTravel = 0
         palmStillSince = now
@@ -525,14 +549,21 @@ final class HandGestureRecognizer {
             onEvent?(.palmSwipe(right: right))
         } else if config.palmHoldEnabled, now - palmStillSince > 1.0, now - lastGestureTime > 1.5 {
             lastGestureTime = now
+            oneShotFired = true
             onEvent?(.palmHold)
         }
     }
 
-    private func fireAfterHold(_ seconds: TimeInterval, enabled: Bool, _ action: () -> Void) {
+    /// Fires once per pose entry after the pose has been held `seconds`.
+    /// `oneShot` gestures also unlock the latch afterwards (see oneShotFired);
+    /// fist-drag is NOT one-shot — it begins a continuous action that must keep
+    /// holding the pose until the user opens their hand.
+    private func fireAfterHold(_ seconds: TimeInterval, enabled: Bool,
+                               oneShot: Bool = true, _ action: () -> Void) {
         guard enabled, !holdFired else { return }
         if CACurrentMediaTime() - poseEnterTime >= seconds {
             holdFired = true
+            if oneShot { oneShotFired = true }
             action()
         }
     }
