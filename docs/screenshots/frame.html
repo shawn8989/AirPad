@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Store screenshot framer</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f6f8; --fg:#111; --panel:#fff; --line:#d8d8de; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16161a; --fg:#f2f2f5; --panel:#202027; --line:#33333c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:18px 22px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:18px; }
+  header p { margin:0; opacity:.7; font-size:13px; }
+  .wrap { display:flex; gap:22px; padding:22px; flex-wrap:wrap; align-items:flex-start; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+           padding:16px; min-width:290px; flex:1 1 300px; max-width:420px; }
+  label { display:block; font-size:12px; font-weight:600; text-transform:uppercase;
+          letter-spacing:.04em; opacity:.65; margin:14px 0 5px; }
+  label:first-of-type { margin-top:0; }
+  input[type=text], select, input[type=color], input[type=range] { width:100%; }
+  input[type=text], select { padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+                             background:var(--bg); color:var(--fg); font-size:14px; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  button { margin-top:16px; width:100%; padding:11px; border:0; border-radius:9px;
+           background:#2563eb; color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.secondary { background:transparent; color:var(--fg); border:1px solid var(--line); }
+  canvas { max-width:100%; height:auto; border:1px solid var(--line); border-radius:12px;
+           background:var(--panel); }
+  .preview { flex:1 1 320px; max-width:400px; }
+  .hint { font-size:12px; opacity:.65; margin-top:10px; }
+  ol { margin:8px 0 0 18px; padding:0; font-size:13px; opacity:.8; }
+  li { margin-bottom:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>App Store screenshot framer</h1>
+  <p>Drop in a raw Simulator or device capture, add a caption, export at the exact size Apple requires. Everything runs locally — nothing is uploaded.</p>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <label>Screenshot file</label>
+    <input type="file" id="file" accept="image/png,image/jpeg">
+
+    <label>Caption</label>
+    <input type="text" id="caption" value="Your Mac, in your pocket" maxlength="60">
+
+    <label>Sub-caption (optional)</label>
+    <input type="text" id="sub" value="" maxlength="70">
+
+    <label>Output size</label>
+    <select id="size">
+      <option value="1320x2868">6.9" — 1320 × 2868 (required)</option>
+      <option value="1284x2778">6.5" — 1284 × 2778 (required)</option>
+      <option value="1242x2688">6.5" alt — 1242 × 2688</option>
+      <option value="2064x2752">iPad 13" — 2064 × 2752</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label>Background</label>
+        <input type="color" id="bg1" value="#1f2b4d">
+      </div>
+      <div>
+        <label>Gradient to</label>
+        <input type="color" id="bg2" value="#4c2f6b">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Text colour</label>
+        <input type="color" id="fg" value="#ffffff">
+      </div>
+      <div>
+        <label>Device scale</label>
+        <input type="range" id="scale" min="60" max="95" value="80">
+      </div>
+    </div>
+
+    <button id="save" disabled>Download PNG</button>
+    <button id="reset" class="secondary">Reset caption styling</button>
+
+    <div class="hint">
+      <strong>Order for the six shots:</strong>
+      <ol>
+        <li>Trackpad connected — "Your Mac, in your pocket"</li>
+        <li>Live Screen — "See your Mac. Touch what you see."</li>
+        <li>Hand Mouse (real device) — "Control it with your hands"</li>
+        <li>Desktops &amp; Apps — "Jump to any window, instantly"</li>
+        <li>Gesture Studio — "Record your own gestures"</li>
+        <li>Media &amp; speakers — "Remote for everything"</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="preview">
+    <canvas id="canvas" width="1320" height="2868"></canvas>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const canvas = $('canvas'), ctx = canvas.getContext('2d');
+let img = null;
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+function wrapText(c, text, maxWidth) {
+  const words = text.split(/\s+/), lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (c.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function render() {
+  const [W, H] = $('size').value.split('x').map(Number);
+  canvas.width = W; canvas.height = H;
+
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, $('bg1').value);
+  grad.addColorStop(1, $('bg2').value);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Caption block, sized relative to the canvas so it scales across devices.
+  const pad = W * 0.08;
+  let y = H * 0.075;
+  ctx.fillStyle = $('fg').value;
+  ctx.textAlign = 'center';
+
+  const titleSize = Math.round(W * 0.062);
+  ctx.font = `700 ${titleSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`;
+  for (const line of wrapText(ctx, $('caption').value, W - pad * 2)) {
+    y += titleSize;
+    ctx.fillText(line, W / 2, y);
+    y += titleSize * 0.18;
+  }
+
+  const subText = $('sub').value.trim();
+  if (subText) {
+    const subSize = Math.round(W * 0.032);
+    ctx.font = `400 ${subSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif`;
+    ctx.globalAlpha = 0.8;
+    y += subSize * 0.7;
+    for (const line of wrapText(ctx, subText, W - pad * 2)) {
+      y += subSize;
+      ctx.fillText(line, W / 2, y);
+      y += subSize * 0.2;
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (!img) {
+    ctx.globalAlpha = 0.5;
+    ctx.font = `400 ${Math.round(W * 0.03)}px system-ui, sans-serif`;
+    ctx.fillText('Choose a screenshot file →', W / 2, H * 0.5);
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  // Device frame: fit the capture into the space under the caption.
+  const scale = Number($('scale').value) / 100;
+  const availTop = y + H * 0.045;
+  const availH = H - availTop - H * 0.05;
+  const maxW = W * scale;
+  const ratio = Math.min(maxW / img.width, availH / img.height);
+  const dw = img.width * ratio, dh = img.height * ratio;
+  const dx = (W - dw) / 2, dy = availTop;
+  const radius = dw * 0.055;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = dw * 0.07;
+  ctx.shadowOffsetY = dw * 0.02;
+  roundRect(ctx, dx, dy, dw, dh, radius);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, dx, dy, dw, dh, radius);
+  ctx.clip();
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+
+  // Thin bezel highlight so the device reads as hardware, not a pasted rectangle.
+  ctx.save();
+  roundRect(ctx, dx, dy, dw, dh, radius);
+  ctx.lineWidth = Math.max(2, dw * 0.004);
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.stroke();
+  ctx.restore();
+}
+
+$('file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  const i = new Image();
+  i.onload = () => { img = i; URL.revokeObjectURL(url); $('save').disabled = false; render(); };
+  i.src = url;
+});
+
+['caption', 'sub', 'size', 'bg1', 'bg2', 'fg', 'scale'].forEach(id =>
+  $(id).addEventListener('input', render));
+
+$('save').addEventListener('click', () => {
+  const a = document.createElement('a');
+  const label = $('caption').value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 28) || 'screenshot';
+  a.download = `${label}-${$('size').value}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+});
+
+$('reset').addEventListener('click', () => {
+  $('bg1').value = '#1f2b4d'; $('bg2').value = '#4c2f6b';
+  $('fg').value = '#ffffff'; $('scale').value = 80;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
