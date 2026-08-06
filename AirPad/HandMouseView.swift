@@ -18,15 +18,45 @@ final class HandMouseAdapter: ObservableObject {
     @Published var permissionDenied = false
     @Published var pose: HandPose = .none
     @Published var pinching = false
+    /// The pose currently trying to take over, and how close it is (0...1).
+    /// Drawn as a filling ring so the lock is visible rather than mysterious.
+    @Published var candidatePose: HandPose = .none
+    @Published var candidateProgress: Double = 0
+    @Published var calibrating = false
+    @Published var calibrationDone = false
 
     init() {
         tracker.onPermission = { [weak self] granted in self?.permissionDenied = !granted }
         tracker.onRunning = { [weak self] running in self?.running = running }
         tracker.onFrame = { [weak self] hand in self?.recognizer.process(hand) }
         recognizer.onPoseChanged = { [weak self] pose in
-            DispatchQueue.main.async { self?.pose = pose }
+            DispatchQueue.main.async {
+                self?.pose = pose
+                self?.candidatePose = .none
+                self?.candidateProgress = 0
+            }
+        }
+        recognizer.onPoseCandidate = { [weak self] pose, progress in
+            DispatchQueue.main.async {
+                self?.candidatePose = progress > 0 ? pose : .none
+                self?.candidateProgress = progress
+            }
+        }
+        recognizer.onCalibrated = { [weak self] calibration in
+            calibration.save()
+            DispatchQueue.main.async {
+                self?.calibrating = false
+                self?.calibrationDone = true
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            }
         }
         recognizer.onEvent = { [weak self] event in self?.handle(event) }
+    }
+
+    func calibrate() {
+        calibrationDone = false
+        calibrating = true
+        recognizer.startCalibration(seconds: 2.0)
     }
 
     var config: HandGestureConfig {
@@ -65,7 +95,7 @@ final class HandMouseAdapter: ObservableObject {
             NetworkManager.shared.sendSwipe(fingers: 3, direction: right ? "right" : "left")
             heavyHaptic()
         case .palmHold:
-            NetworkManager.shared.sendSwipe(fingers: 3, direction: "up")  // Mission Control
+            BuiltinGestureMap.action(for: .palmHold).execute()  // default: Mission Control
             heavyHaptic()
         case .fistDragBegan:
             NetworkManager.shared.sendMouseDown(button: "left")
@@ -80,10 +110,10 @@ final class HandMouseAdapter: ObservableObject {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
         case .thumbsUpHold:
-            NetworkManager.shared.sendMedia(action: "play_pause")
+            BuiltinGestureMap.action(for: .thumbsUp).execute()  // default: play/pause
             heavyHaptic()
         case .shakaHold:
-            NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")  // next desktop
+            BuiltinGestureMap.action(for: .shaka).execute()  // default: next desktop
             heavyHaptic()
         case .custom(let id):
             // User-recorded gesture (Gesture Studio): execute its mapped action.
@@ -126,6 +156,7 @@ struct HandMouseView: View {
     @AppStorage("handGestureFistDrag") private var fistDragEnabled = true
     @AppStorage("handGestureThumbsUp") private var thumbsUpEnabled = true
     @AppStorage("handGestureShaka") private var shakaEnabled = true
+    @AppStorage("handTuningPreset") private var tuningPreset = "balanced"
 
     @StateObject private var adapter = HandMouseAdapter()
     @State private var showGestureSheet = false
@@ -152,11 +183,7 @@ struct HandMouseView: View {
                             .strokeBorder(borderColor, lineWidth: 3)
                     )
                     .overlay(alignment: .topLeading) {
-                        Label(adapter.pinching ? "Pinch — button down" : adapter.pose.rawValue,
-                              systemImage: adapter.pose == .none ? "hand.raised.slash" : "hand.raised.fill")
-                            .font(.footnote.weight(.semibold))
-                            .padding(8)
-                            .background(.ultraThinMaterial, in: Capsule())
+                        poseBadge
                             .padding(10)
                     }
                     .overlay(alignment: .topTrailing) {
@@ -190,6 +217,23 @@ struct HandMouseView: View {
                         }
                         .padding(10)
                     }
+
+                if adapter.calibrating {
+                    VStack(spacing: 10) {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 44))
+                            .foregroundStyle(Color.accentColor)
+                        Text("Hold your hand open")
+                            .font(.headline)
+                        Text("Fingers spread, palm to the camera — measuring…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        ProgressView()
+                    }
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                }
 
                 if adapter.permissionDenied {
                     VStack(spacing: 8) {
@@ -237,21 +281,101 @@ struct HandMouseView: View {
         .onChange(of: fistDragEnabled) { _, _ in pushConfig() }
         .onChange(of: thumbsUpEnabled) { _, _ in pushConfig() }
         .onChange(of: shakaEnabled) { _, _ in pushConfig() }
+        .onChange(of: tuningPreset) { _, _ in pushConfig() }
+        .onChange(of: adapter.calibrationDone) { _, done in
+            // Re-push so the freshly measured calibration takes effect at once.
+            if done { pushConfig() }
+        }
+    }
+
+    /// Locked pose + a ring that fills while another pose builds evidence.
+    /// Seeing *why* the pose isn't switching is what makes the lock learnable.
+    private var poseBadge: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.secondary.opacity(0.35), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: adapter.candidateProgress)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: adapter.pose == .none ? "hand.raised.slash" : "hand.raised.fill")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .frame(width: 30, height: 30)
+            .animation(.linear(duration: 0.1), value: adapter.candidateProgress)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(adapter.pinching ? "Pinch — button down" : adapter.pose.rawValue)
+                    .font(.footnote.weight(.semibold))
+                if adapter.candidateProgress > 0, adapter.candidatePose != .none {
+                    Text("→ \(adapter.candidatePose.rawValue)")
+                        .font(.caption2)
+                        .foregroundStyle(Color.accentColor)
+                } else if adapter.pose != .none {
+                    Text("locked")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
     }
 
     private var gestureSheet: some View {
         NavigationStack {
             List {
+                Section {
+                    Picker("Gesture lock", selection: $tuningPreset) {
+                        Text("Steady").tag("steady")
+                        Text("Balanced").tag("balanced")
+                        Text("Quick").tag("quick")
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Feel")
+                } footer: {
+                    Text("A gesture stays locked in until a different one is clearly and steadily held — your hand can drift without changing pose. Steady holds hardest; Quick switches soonest.")
+                }
+
+                Section {
+                    Button {
+                        showGestureSheet = false
+                        adapter.calibrate()
+                    } label: {
+                        Label(HandCalibration.isCalibrated ? "Re-calibrate my hand" : "Calibrate my hand",
+                              systemImage: "hand.raised.fingers.spread")
+                    }
+                    if HandCalibration.isCalibrated {
+                        Button(role: .destructive) {
+                            HandCalibration.clear()
+                            pushConfig()
+                        } label: {
+                            Label("Use default hand sizing", systemImage: "arrow.uturn.backward")
+                        }
+                    }
+                } header: {
+                    Text("Calibration")
+                } footer: {
+                    Text(HandCalibration.isCalibrated
+                         ? "Poses are tuned to your hand. Re-run this if recognition drifts in different lighting or at a different distance."
+                         : "Two seconds with your hand open teaches AirPad your finger proportions — the single biggest fix if poses feel touchy.")
+                }
+
                 Section("Gestures") {
                     Toggle("Palm swipe → switch desktop", isOn: $palmSwipeEnabled)
-                    Toggle("Palm hold → Mission Control", isOn: $palmHoldEnabled)
                     Toggle("Two-finger V → scroll", isOn: $scrollEnabled)
                     Toggle("Fist hold → grab & drag", isOn: $fistDragEnabled)
-                    Toggle("Thumbs-up → play/pause", isOn: $thumbsUpEnabled)
-                    Toggle("Shaka 🤙 → next desktop", isOn: $shakaEnabled)
+                }
+                Section("Customizable Gestures") {
+                    builtinGestureRow(.palmHold, enabled: $palmHoldEnabled)
+                    builtinGestureRow(.thumbsUp, enabled: $thumbsUpEnabled)
+                    builtinGestureRow(.shaka, enabled: $shakaEnabled)
                 }
                 Section {
-                    Text("Pointing and pinch-to-click are always on. Turn off any gesture that misfires for you.")
+                    Text("Pointing and pinch-to-click are always on. Turn off any gesture that misfires, or tap a customizable one to change what it does — open an app, a shortcut, Mission Control, anything.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -267,6 +391,28 @@ struct HandMouseView: View {
         .presentationDetents([.medium])
     }
 
+    /// A toggle + a NavigationLink into the Gesture Studio action picker, so
+    /// each built-in hold gesture's ACTION is user-remappable (e.g. shaka →
+    /// Mission Control).
+    private func builtinGestureRow(_ slot: BuiltinGestureSlot, enabled: Binding<Bool>) -> some View {
+        HStack {
+            NavigationLink {
+                ActionPickerView(selection: Binding(
+                    get: { BuiltinGestureMap.action(for: slot) },
+                    set: { BuiltinGestureMap.set($0, for: slot) }))
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(slot.displayName)
+                    Text(BuiltinGestureMap.action(for: slot).displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Toggle("", isOn: enabled)
+                .labelsHidden()
+        }
+    }
+
     private func pushConfig() {
         var c = HandGestureConfig()
         c.sensitivity = handMouseSensitivity
@@ -277,6 +423,8 @@ struct HandMouseView: View {
         c.thumbsUpEnabled = thumbsUpEnabled
         c.shakaEnabled = shakaEnabled
         c.customTemplates = GestureStore.shared.enabledTemplates
+        c.tuning = HandTuning.named(tuningPreset)
+        c.calibration = HandCalibration.load()
         adapter.config = c
     }
 }

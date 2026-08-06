@@ -69,6 +69,15 @@ final class HandCursorMapper {
     private var lastTime: TimeInterval = 0
     private var freezeUntil: TimeInterval = 0
 
+    /// Retunes the smoothing (Steady = heavier, Quick = lighter). Keeps the
+    /// filter's running state so changing it mid-session can't jolt the cursor.
+    func configureSmoothing(minCutoff: Double, beta: Double) {
+        fx.minCutoff = minCutoff
+        fx.beta = beta
+        fy.minCutoff = minCutoff
+        fy.beta = beta
+    }
+
     /// Feed the next anchor position; returns a cursor delta in pixels, or nil
     /// when nothing should move (first sample, frozen, or sub-pixel).
     func update(_ anchor: CGPoint, at time: TimeInterval = CACurrentMediaTime()) -> (dx: Double, dy: Double)? {

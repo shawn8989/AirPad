@@ -153,6 +153,7 @@ struct RemoteKeyboardInput: UIViewRepresentable {
         @objc private func editingChanged() {
             if isDictating {
                 wasDictating = true
+                scheduleDictationFlush()
                 return  // hands off: dictation owns the text until it ends
             }
             if wasDictating {
@@ -183,19 +184,40 @@ struct RemoteKeyboardInput: UIViewRepresentable {
             resetSentinel()
         }
 
-        // UITextInput dictation hooks. Flushing is idempotent (resetSentinel
-        // empties the buffer), so it's safe if both fire — or if neither does
-        // (editingChanged's wasDictating check catches that).
-        override func insertDictationResult(_ dictationResult: [UIDictationPhrase]) {
-            super.insertDictationResult(dictationResult)  // finalize the text
-            wasDictating = false
-            flushDictationText()
+        // Dictation end detection WITHOUT the UIResponder dictation hooks.
+        // Overriding insertDictationResult / dictationRecordingDidEnd and
+        // calling super crashed the app the moment the mic key was tapped:
+        // those callbacks land while UIKit is mid-insertion, and our text
+        // mutation inside them tore the dictation session's own state apart.
+        // Instead we watch the text settle: once it stops changing for a
+        // moment and dictation is no longer the active input mode, we flush.
+        private var dictationFlushWork: DispatchWorkItem?
+
+        private func scheduleDictationFlush() {
+            dictationFlushWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                // Still in dictation mode (mic open, pausing between phrases)?
+                // Check again shortly instead of cutting the session short.
+                guard !self.isDictating else {
+                    self.scheduleDictationFlush()
+                    return
+                }
+                self.wasDictating = false
+                self.flushDictationText()
+            }
+            dictationFlushWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
         }
 
-        override func dictationRecordingDidEnd() {
-            super.dictationRecordingDidEnd()
-            wasDictating = false
-            flushDictationText()
+        override func resignFirstResponder() -> Bool {
+            // Dismissing the keyboard mid-dictation must not swallow the text.
+            dictationFlushWork?.cancel()
+            if wasDictating {
+                wasDictating = false
+                flushDictationText()
+            }
+            return super.resignFirstResponder()
         }
 
         private func forward(_ text: String) {

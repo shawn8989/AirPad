@@ -123,6 +123,10 @@ final class AirPopEngine: ObservableObject {
         cfg.thumbsUpEnabled = false
         cfg.shakaEnabled = false
         cfg.customTemplates = GestureStore.shared.enabledTemplates
+        // The game wants poses to answer fast, but it still benefits from the
+        // player's own hand calibration.
+        cfg.tuning = .quick
+        cfg.calibration = HandCalibration.load()
         recognizer.config = cfg
         recognizer.onPoseChanged = { [weak self] pose in
             DispatchQueue.main.async {

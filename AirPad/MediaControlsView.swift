@@ -54,6 +54,40 @@ struct MediaControlsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            Section {
+                if network.audioOutputs.isEmpty {
+                    HStack {
+                        ProgressView()
+                        Text("Asking the Mac for its speakers…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(network.audioOutputs) { device in
+                        Button {
+                            NetworkManager.shared.sendSetAudioDevice(uid: device.uid, name: device.name)
+                            if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                        } label: {
+                            HStack {
+                                Image(systemName: speakerIcon(for: device.name))
+                                    .foregroundStyle(Color.accentColor)
+                                    .frame(width: 24)
+                                Text(device.name)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                if device.isCurrent {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Mac Sound Output")
+            } footer: {
+                Text("Sends the Mac's audio to a different speaker — TV, headphones, or built-in. A wireless speaker appears here after the Mac has connected to it once.")
+            }
             Section("Volume") {
                 HStack(spacing: 12) {
                     mediaButton("speaker.slash.fill", "Mute", "mute")
@@ -144,8 +178,12 @@ struct MediaControlsView: View {
         .navigationTitle("Media & System")
         .task {
             // Poll the Mac for track + volume while this screen is visible.
+            // Speaker list refreshes on a slower beat — devices rarely change.
+            var tick = 0
             while !Task.isCancelled {
                 NetworkManager.shared.requestNowPlaying()
+                if tick % 3 == 0 { NetworkManager.shared.requestAudioDevices() }
+                tick += 1
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
@@ -154,6 +192,15 @@ struct MediaControlsView: View {
                 volumeSlider = Double(volume)
             }
         }
+    }
+
+    private func speakerIcon(for name: String) -> String {
+        let n = name.lowercased()
+        if n.contains("tv") || n.contains("display") { return "tv" }
+        if n.contains("airpods") || n.contains("headphone") || n.contains("buds") { return "headphones" }
+        if n.contains("homepod") { return "homepod.fill" }
+        if n.contains("macbook") || n.contains("built-in") { return "laptopcomputer" }
+        return "hifispeaker.fill"
     }
 
     private func keyButton(_ icon: String, _ title: String, keyCode: UInt16) -> some View {

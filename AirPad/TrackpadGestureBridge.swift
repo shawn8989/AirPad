@@ -7,15 +7,19 @@ struct TrackpadGestureBridge: UIViewRepresentable {
     var naturalScroll: Bool
     var hapticsEnabled: Bool
     var showTouches: Bool
+    /// Whether a pinch sends ⌘+ / ⌘- to the Mac. Off in Live Screen: there a
+    /// pinch means "zoom the picture I'm looking at", and silently zooming the
+    /// Mac's apps instead left windows and menus enlarged after disconnecting.
+    var pinchZoomsMac: Bool = true
 
     func makeUIView(context: Context) -> GestureHostView {
         let v = GestureHostView()
-        v.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches)
+        v.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches, pinchZoomsMac: pinchZoomsMac)
         return v
     }
 
     func updateUIView(_ uiView: GestureHostView, context: Context) {
-        uiView.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches)
+        uiView.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches, pinchZoomsMac: pinchZoomsMac)
     }
 }
 
@@ -26,6 +30,7 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
 
     private var dragLocked = false
     private var pinchAccum: CGFloat = 1.0
+    private var pinchZoomsMac: Bool = true
 
     // Live finger-tracking for the on-screen touch indicator AND for all pan
     // handling (mouse move, scroll, multi-finger swipes). touchPoints is rebuilt
@@ -78,11 +83,12 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
         return g
     }()
 
-    func configure(pointerSensitivity: Double, naturalScroll: Bool, hapticsEnabled: Bool, showTouches: Bool) {
+    func configure(pointerSensitivity: Double, naturalScroll: Bool, hapticsEnabled: Bool, showTouches: Bool, pinchZoomsMac: Bool = true) {
         self.pointerSensitivity = CGFloat(pointerSensitivity)
         self.naturalScroll = naturalScroll
         self.hapticsEnabled = hapticsEnabled
         self.showTouches = showTouches
+        self.pinchZoomsMac = pinchZoomsMac
         isMultipleTouchEnabled = true
         isOpaque = false
         backgroundColor = .clear
@@ -285,6 +291,7 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
 
     // MARK: - Handlers
     @objc private func handlePinch(_ g: UIPinchGestureRecognizer) {
+        guard pinchZoomsMac else { return }
         switch g.state {
         case .began:
             pinchAccum = 1.0

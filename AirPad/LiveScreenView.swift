@@ -3,6 +3,10 @@ import UIKit
 import Combine
 
 struct LiveScreenView: View {
+    /// When true (the home screen's "TV Setup" tile), the guided
+    /// mirror-from-Mac tip shows as soon as the live picture is up.
+    var startWithMirrorTip: Bool = false
+
     @StateObject private var network = NetworkManager.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -17,13 +21,18 @@ struct LiveScreenView: View {
     fileprivate enum ControlMode: String, CaseIterable, Identifiable { case pointer, touch, view; var id: String { rawValue } }
     @State private var controlMode: ControlMode = .pointer
 
-    // Fullscreen & overlays
-//    @State private var isFullscreen = false
+    // Fullscreen
     @State private var isFullscreen = UIDevice.current.userInterfaceIdiom == .phone
-    @State private var showOverlays = true
     @ObservedObject private var keyboard = KeyboardPresenter.shared
     @State private var lastFrameAt = Date()
     @State private var showShortcuts = false
+    @State private var showOptions = false
+    @State private var showTVHelp = false
+    @State private var showMirrorTip = false
+
+    // Fullscreen chrome auto-hide (windowed mode always shows it).
+    @State private var chromeVisible = true
+    @State private var chromeHideWorkItem: DispatchWorkItem?
 
     // Zoom & pan (view mode)
     @State private var zoom: CGFloat = 1.0
@@ -35,14 +44,9 @@ struct LiveScreenView: View {
     @State private var quality: Double = 0.7
     @State private var maxWidth: Int = 1600 // default higher resolution
 
-    // Debounce restart and auto-hide overlays
+    // Debounce restart of the stream on quality/size changes
     @State private var pendingRestartWorkItem: DispatchWorkItem?
-    @State private var overlayAutoHideWorkItem: DispatchWorkItem?
     @State private var dragLocked: Bool = false
-
-    // Auto-hide delay (seconds). 3s proved too aggressive — the controls
-    // vanished before people found them.
-    private let overlayAutoHideDelay: TimeInterval = 8.0
 
     var body: some View {
         ZStack {
@@ -56,25 +60,22 @@ struct LiveScreenView: View {
                     .allowsHitTesting(false)
 
                 if let img = network.liveImage {
+                    // The zoom/pan set in View mode STAYS applied in Pointer and
+                    // Touch — otherwise lining up a region then switching to
+                    // control it snapped the picture back and made View useless.
+                    // Only the zoom/pan gestures are View-only.
                     GeometryReader { _ in
-                        if controlMode == .view {
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                                .scaleEffect(zoom)
-                                .offset(offset)
-                                .gesture(viewGestures())
-                                .animation(.snappy(duration: 0.15), value: zoom)
-                                .animation(.snappy(duration: 0.15), value: offset)
-                        } else {
-                            Image(uiImage: img)
-                                .resizable()
-                                .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .clipped()
-                        }
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                            .scaleEffect(zoom)
+                            .offset(offset)
+                            .animation(.snappy(duration: 0.15), value: zoom)
+                            .animation(.snappy(duration: 0.15), value: offset)
+                            .gesture(viewGestures(),
+                                     including: controlMode == .view ? .gesture : .none)
                     }
                 } else {
                     VStack(spacing: 8) {
@@ -101,7 +102,9 @@ struct LiveScreenView: View {
                 TrackpadGestureBridgeOverlay(isActive: controlMode == .pointer)
                 AbsoluteTouchOverlay(isActive: controlMode == .touch,
                                      imageSize: network.liveImage?.size,
-                                     fill: fitMode == .fill)
+                                     fill: fitMode == .fill,
+                                     zoom: zoom,
+                                     offset: offset)
                 EdgeGestureZones(isActive: isFullscreen && controlMode == .pointer)
                 // The remote keyboard itself is hosted once at the root
                 // (ContentView) — this screen only toggles KeyboardPresenter.
@@ -110,63 +113,112 @@ struct LiveScreenView: View {
             .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 16))
             .padding(isFullscreen ? 0 : 12)
             .ignoresSafeArea(edges: isFullscreen ? .all : [])
-            .overlay(
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Single tap toggles overlays when in fullscreen and not in pointer mode
-                        withAnimation(.easeInOut(duration: 0.2)) { showOverlays.toggle() }
-                        if showOverlays { scheduleOverlayAutoHide() } else { cancelOverlayAutoHide() }
-                    }
-                    // Only View mode uses tap-to-toggle-overlays; Pointer and
-                    // Touch modes need every tap for input.
-                    .allowsHitTesting(isFullscreen && controlMode == .view)
-            )
-
-            // Overlays
-            if showOverlays {
-                overlayUI
-            }
-
+            // Chrome: always visible in windowed mode. In FULL SCREEN it fades
+            // out after a few idle seconds so it stops covering the Mac's
+            // screen, and any touch brings it straight back — the old build
+            // either hid it permanently or blocked the picture forever.
             VStack {
-                HStack {
-                    Button(action: {
-                        stopStreamingIfNeeded()
-                        dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.headline)
-                            .padding(8)
-                            .background(.ultraThinMaterial, in: Circle())
+                HStack(spacing: 8) {
+                    if isFullscreen {
+                        Button {
+                            stopStreamingIfNeeded()
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.headline)
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
                     }
-                    .padding(8)
-                    .allowsHitTesting(true)
+                    fpsOverlay
                     Spacer()
+                    topRightMenu
                 }
+                .padding(8)
                 Spacer()
+                controlBar
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, isFullscreen ? 12 : 4)
             }
-            .opacity(isFullscreen ? 1 : 0)
+            .opacity(chromeVisible ? 1 : 0)
+            .allowsHitTesting(chromeVisible)
+            .animation(.easeInOut(duration: 0.25), value: chromeVisible)
             .zIndex(2)
 
-            // Visible handle to bring the controls back when they've auto-hidden
-            // (the old invisible hotspot was undiscoverable).
-            VStack {
-                HStack {
+            // When the chrome is hidden, this slim handle stays as the visible
+            // affordance (and a direct way back) so the controls are never a
+            // secret. Tapping anywhere on the picture also brings them back.
+            if !chromeVisible {
+                VStack {
                     Spacer()
-                    Button { bumpActivity() } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.body)
-                            .padding(10)
-                            .background(.ultraThinMaterial, in: Circle())
+                    Button {
+                        revealChrome()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.up")
+                            Text("Controls")
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .opacity(0.75)
                     }
-                    .opacity(0.6)
+                    .padding(.bottom, isFullscreen ? 12 : 6)
                 }
-                Spacer()
+                .transition(.opacity)
+                .zIndex(3)
             }
-            .padding(8)
-            .opacity(isFullscreen && controlMode == .pointer && !showOverlays ? 1 : 0)
-            .allowsHitTesting(isFullscreen && controlMode == .pointer && !showOverlays)
-            .zIndex(3)
+
+            // Guided "mirror the Mac to the TV" tip: walks the user through
+            // starting AirPlay ON THE MAC using the live picture + pointer.
+            if showMirrorTip {
+                VStack {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "tv.badge.wifi")
+                            .font(.title3)
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Mirror your Mac to the TV")
+                                .font(.caption.weight(.bold))
+                            Text("On the Mac's screen above, click the Control Center icon (two toggles, top-right of the menu bar) → Screen Mirroring → pick your TV. Then watch the TV and control from any page here.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button {
+                            withAnimation { showMirrorTip = false }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 420)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.top, 52)
+                    .padding(.horizontal, 12)
+                    Spacer()
+                }
+                .zIndex(3)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // TV Mode: the picture is on the television; this screen is the remote.
+            if TVSceneManager.shared.tvConnected {
+                VStack {
+                    Label("Showing on TV — Pointer/Touch controls it", systemImage: "tv")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 6)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+                .zIndex(4)
+            }
 
             // Debug HUD for event counters
             VStack {
@@ -186,6 +238,7 @@ struct LiveScreenView: View {
                 .padding(8)
                 Spacer()
             }
+            .padding(.top, 52)  // below the back/FPS/Options row
             .allowsHitTesting(false)
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -195,8 +248,7 @@ struct LiveScreenView: View {
         .onAppear {
             // Start streaming automatically when entering if not already
             if !isStreaming { startStreaming() }
-            // Prepare auto-hide if applicable
-            scheduleOverlayAutoHideIfNeeded()
+            if startWithMirrorTip { showMirrorTip = true }
         }
         .onDisappear { stopStreamingIfNeeded() }
         .onReceive(network.$liveImage) { image in
@@ -224,95 +276,95 @@ struct LiveScreenView: View {
             }
         }
         .sheet(isPresented: $showShortcuts) { AppShortcutsView() }
+        .sheet(isPresented: $showOptions) { optionsSheet }
+        .sheet(isPresented: $showTVHelp) { tvHelpSheet }
         .onChange(of: isStreaming) { _, streaming in
             DispatchQueue.main.async {
                 UIApplication.shared.isIdleTimerDisabled = streaming
             }
-            if streaming { scheduleOverlayAutoHideIfNeeded() } else { cancelOverlayAutoHide() }
         }
         .onChange(of: quality) { _, _ in scheduleRestartDebounced() }
         .onChange(of: maxWidth) { _, _ in scheduleRestartDebounced() }
-        .onChange(of: isFullscreen) { _, _ in scheduleOverlayAutoHideIfNeeded() }
-        .onChange(of: controlMode) { _, _ in scheduleOverlayAutoHideIfNeeded() }
-        .onChange(of: network.debugMouseMoveCount) { _, _ in showDebugAndAutoHide() }
-        .onChange(of: network.debugScrollCount) { _, _ in showDebugAndAutoHide() }
-        .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide() }
+        // Any interaction with the Mac counts as "the user is here": it shows
+        // the chrome and restarts the idle timer.
+        .onChange(of: network.debugMouseMoveCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
+        .onChange(of: network.debugScrollCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
+        .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
+        .onChange(of: isFullscreen) { _, _ in revealChrome() }
+        .onChange(of: controlMode) { _, _ in revealChrome() }
     }
 
-    // MARK: - Overlay UI
-    private var overlayUI: some View {
-        ZStack {
-            // FPS (top-left)
-            VStack { HStack { fpsOverlay; Spacer() }; Spacer() }
-                .padding(8)
+    // MARK: - Control bar (persistent, labeled)
 
-            // Top-right controls
-            VStack {
-                HStack {
-                    Spacer()
-                    topRightMenu
-                }
-                Spacer()
+    /// The always-visible control strip: mode picker on top, one row of
+    /// captioned buttons below. Every control is labeled — icon-only buttons
+    /// left people guessing, and auto-hiding made them unclickable.
+    private var controlBar: some View {
+        VStack(spacing: 8) {
+            Picker("Mode", selection: $controlMode) {
+                Text("Pointer").tag(ControlMode.pointer)
+                Text("Touch").tag(ControlMode.touch)
+                Text("View").tag(ControlMode.view)
             }
-            .padding(8)
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 300)
 
-            // Bottom controls
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    if isFullscreen && controlMode == .pointer {
-                        FloatingClickBar(dragLocked: $dragLocked,
-                                         controlMode: $controlMode,
-                                         onKeyboard: { keyboard.visible = true })
-                    } else {
-                        // Two rows: a single row of labeled buttons overflows
-                        // an iPhone and everything squishes.
-                        VStack(spacing: 8) {
-                            Picker("Mode", selection: $controlMode) {
-                                Text("Pointer").tag(ControlMode.pointer)
-                                Text("Touch").tag(ControlMode.touch)
-                                Text("View").tag(ControlMode.view)
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(maxWidth: 280)
-
-                            HStack(spacing: 10) {
-                                Button { NetworkManager.shared.sendClick(button: "left") } label: {
-                                    Image(systemName: "cursorarrow.click")
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Button { NetworkManager.shared.sendClick(button: "right") } label: {
-                                    Image(systemName: "cursorarrow.rays")
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button { keyboard.visible = true } label: {
-                                    Image(systemName: "keyboard")
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button { showShortcuts = true } label: {
-                                    Image(systemName: "square.grid.2x2")
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button(isStreaming ? "Stop" : "Start") {
-                                    if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                        }
-                        .padding(10)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    Spacer()
+            HStack(spacing: 4) {
+                barButton("Desktop", "chevron.left") {
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
-                .padding(8)
+                barButton("Click", "cursorarrow.click", tint: .accentColor) {
+                    NetworkManager.shared.sendClick(button: "left")
+                }
+                barButton("Right", "cursorarrow.rays") {
+                    NetworkManager.shared.sendClick(button: "right")
+                }
+                barButton(dragLocked ? "Release" : "Drag",
+                          dragLocked ? "hand.draw.fill" : "hand.draw",
+                          tint: dragLocked ? .orange : nil) {
+                    dragLocked.toggle()
+                    if dragLocked {
+                        NetworkManager.shared.sendMouseDown(button: "left")
+                    } else {
+                        NetworkManager.shared.sendMouseUp(button: "left")
+                    }
+                }
+                barButton("Keys", "keyboard") {
+                    keyboard.visible = true
+                }
+                barButton("Apps", "square.grid.2x2") {
+                    showShortcuts = true
+                }
+                barButton("TV", "tv") {
+                    showTVHelp = true
+                }
+                barButton("Desktop", "chevron.right") {
+                    NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
             }
         }
-        .zIndex(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 500)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private func barButton(_ title: String, _ icon: String, tint: Color? = nil,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(tint ?? .primary)
+            .frame(minWidth: 42, minHeight: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var fpsOverlay: some View {
@@ -325,60 +377,155 @@ struct LiveScreenView: View {
         .background(.ultraThinMaterial, in: Capsule())
     }
 
+    // The Options button opens a real settings SHEET. The old pull-down menu
+    // held a Slider — which SwiftUI menus don't support: broken layout
+    // constraints, taps dismissing the menu, no landscape scrolling.
     private var topRightMenu: some View {
-        Menu {
-            Button("App Shortcuts") { showShortcuts = true }
-            // Fit / Fill
-            Picker("Content Mode", selection: $fitMode) {
-                Text("Fit").tag(ContentMode.fit)
-                Text("Fill").tag(ContentMode.fill)
-            }
-
-            // Zoom controls (only in view mode)
-            if controlMode == .view {
-                Button("Reset Zoom") { withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero } }
-            }
-
-            // Quality
-            Section("Quality") {
-                qualitySlider
-            }
-
-            // Resolution
-            Section("Max Width") {
-                Button("640 px") { maxWidth = 640 }
-                Button("1024 px") { maxWidth = 1024 }
-                Button("1600 px") { maxWidth = 1600 }
-                Button("2048 px") { maxWidth = 2048 }
-            }
-
-            // Full screen
-            Button(isFullscreen ? "Exit Full Screen" : "Full Screen") {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isFullscreen.toggle()
-                    showOverlays = !isFullscreen ? true : showOverlays
-                }
-            }
-
+        Button {
+            showOptions = true
         } label: {
-            Label("Options", systemImage: "ellipsis.circle")
+            Label("Options", systemImage: "slider.horizontal.3")
                 .font(.title3)
                 .padding(6)
                 .background(.ultraThinMaterial, in: Capsule())
         }
     }
 
-    private var qualitySlider: some View {
-        HStack {
-            Image(systemName: "cpu")
-            Slider(value: $quality, in: 0.1...1.0, step: 0.05) {
-                Text("Quality")
-            } minimumValueLabel: {
-                Text("Low").font(.caption)
-            } maximumValueLabel: {
-                Text("High").font(.caption)
+    private var optionsSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Stream") {
+                    HStack {
+                        Text("Quality")
+                        Slider(value: $quality, in: 0.1...1.0, step: 0.05)
+                        Text("\(Int(quality * 100))%")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 46, alignment: .trailing)
+                    }
+                    Picker("Resolution", selection: $maxWidth) {
+                        Text("640").tag(640)
+                        Text("1024").tag(1024)
+                        Text("1600").tag(1600)
+                        Text("2048").tag(2048)
+                    }
+                    .pickerStyle(.segmented)
+                    HStack {
+                        Text("Frame rate")
+                        Spacer()
+                        Text(String(format: "%.1f FPS", network.liveFPS))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Button(isStreaming ? "Stop Stream" : "Start Stream") {
+                        if isStreaming { stopStreamingIfNeeded() } else { startStreaming() }
+                    }
+                }
+
+                Section {
+                    Picker("Scaling", selection: $fitMode) {
+                        Text("Fit (whole screen)").tag(ContentMode.fit)
+                        Text("Fill (crop edges)").tag(ContentMode.fill)
+                    }
+                    Toggle("Full screen", isOn: Binding(
+                        get: { isFullscreen },
+                        set: { newValue in withAnimation(.easeInOut(duration: 0.2)) { isFullscreen = newValue } }))
+                    // Available in every mode now that zoom persists across them.
+                    Button("Reset zoom (this picture)") {
+                        withAnimation { zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero }
+                    }
+                    .disabled(abs(zoom - 1) < 0.01 && offset == .zero)
+                } header: {
+                    Text("Display")
+                } footer: {
+                    Text("In full screen the controls fade out after a few seconds so they stop covering the Mac — touch the screen or tap Controls to bring them back.")
+                }
+
+                Section {
+                    Button("Reset zoom on the Mac (⌘0)") {
+                        NetworkManager.shared.sendKeyCombo(29, command: true, option: false,
+                                                           control: false, shift: false)
+                    }
+                } footer: {
+                    Text("Sends ⌘0 to the app in front on the Mac — use it if an app was left zoomed in.")
+                }
+
+                Section {
+                    Button {
+                        showOptions = false
+                        showShortcuts = true
+                    } label: {
+                        Label("App Shortcuts & Launcher", systemImage: "square.grid.2x2")
+                    }
+                } footer: {
+                    Text("Pointer = trackpad on the video. Touch = tap exactly what you see (double-tap opens, two fingers scroll, hold to drag). View = zoom and pan without sending clicks.")
+                }
+            }
+            .navigationTitle("Live Screen Options")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showOptions = false }
+                }
             }
         }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// TV setup guide. The recommended path is mirroring FROM THE MAC — the
+    /// phone stays completely free, the TV gets native AirPlay quality, and
+    /// the Mac's audio comes along. Phone-side mirroring is the fallback.
+    private var tvHelpSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Mirror from your Mac", systemImage: "star.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Use the live picture and pointer to click the Mac's Control Center icon (top-right of its menu bar) → Screen Mirroring → choose your TV. The TV shows the Mac at full quality with sound, and this phone stays free to use any mode.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button {
+                        showTVHelp = false
+                        withAnimation { showMirrorTip = true }
+                    } label: {
+                        Label("Guide me on the live screen", systemImage: "hand.point.up.left")
+                    }
+                } header: {
+                    Text("Best way")
+                }
+
+                Section("Sound") {
+                    Text("The Mac's audio can go to a different speaker than the TV — use the speaker picker on the Media page.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Other ways") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Wired HDMI adapter", systemImage: "cable.connector")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Plug this phone into the TV with an HDMI adapter: the TV shows only the Mac's screen (TV Mode) while the phone stays the controller.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Label("Phone screen mirroring", systemImage: "iphone.badge.play")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Control Center on this phone → Screen Mirroring → your TV. On some iOS versions the TV mirrors everything the phone shows, so it will follow you between pages.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Show your Mac on a TV")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showTVHelp = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     // MARK: - Gestures (view mode)
@@ -386,6 +533,7 @@ struct LiveScreenView: View {
         let mag = MagnificationGesture()
             .onChanged { value in
                 zoom = (lastZoom * value).clamped(to: 0.5...4.0)
+                revealChrome()
             }
             .onEnded { _ in
                 lastZoom = zoom
@@ -395,6 +543,7 @@ struct LiveScreenView: View {
             .onChanged { value in
                 offset = CGSize(width: lastOffset.width + value.translation.width,
                                  height: lastOffset.height + value.translation.height)
+                revealChrome()
             }
             .onEnded { _ in
                 lastOffset = offset
@@ -418,11 +567,17 @@ struct LiveScreenView: View {
     private func startStreaming() {
         network.startLiveScreen(maxWidth: maxWidth, quality: quality)
         isStreaming = true
+        TVSceneManager.shared.phoneWantsStream = true
     }
 
     private func stopStreamingIfNeeded() {
         if isStreaming {
-            network.stopLiveScreen()
+            TVSceneManager.shared.phoneWantsStream = false
+            // The TV shares this stream — leaving the phone's Live Screen must
+            // not black out the television.
+            if !TVSceneManager.shared.tvConnected {
+                network.stopLiveScreen()
+            }
             isStreaming = false
         }
     }
@@ -441,34 +596,18 @@ struct LiveScreenView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
-    // MARK: - Overlay auto-hide
-    private func scheduleOverlayAutoHideIfNeeded() {
-        cancelOverlayAutoHide()
-        guard isFullscreen, controlMode == .pointer, isStreaming else { return }
-        scheduleOverlayAutoHide()
-    }
-
-    private func scheduleOverlayAutoHide() {
-        cancelOverlayAutoHide()
+    /// Shows the controls and restarts the idle countdown. In windowed mode the
+    /// chrome simply stays up — only full screen hides it, and only after the
+    /// user has stopped interacting for a few seconds.
+    private func revealChrome() {
+        chromeHideWorkItem?.cancel()
+        if !chromeVisible { withAnimation(.easeInOut(duration: 0.2)) { chromeVisible = true } }
+        guard isFullscreen else { return }
         let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.2)) { self.showOverlays = false }
+            withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
         }
-        overlayAutoHideWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + overlayAutoHideDelay, execute: work)
-    }
-
-    private func cancelOverlayAutoHide() {
-        overlayAutoHideWorkItem?.cancel()
-        overlayAutoHideWorkItem = nil
-    }
-
-    private func bumpActivity() {
-        // Show overlays and restart hide timer when in fullscreen pointer mode
-        guard isFullscreen, controlMode == .pointer else { return }
-        if !showOverlays {
-            withAnimation(.easeInOut(duration: 0.2)) { showOverlays = true }
-        }
-        scheduleOverlayAutoHide()
+        chromeHideWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
     }
 
     private func showDebugAndAutoHide() {
@@ -495,75 +634,15 @@ private struct TrackpadGestureBridgeOverlay: View {
         TrackpadGestureBridge(pointerSensitivity: pointerSensitivity,
                                naturalScroll: naturalScroll,
                                hapticsEnabled: hapticsEnabled,
-                               showTouches: showTouches)
+                               showTouches: showTouches,
+                               // A pinch here zooms the picture, never the Mac.
+                               pinchZoomsMac: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .allowsHitTesting(isActive)
             .opacity(isActive ? 0.1 : 0) // keep visually invisible but hit-testable when active (alpha >= 0.01 for UIKit hit-testing)
             .background(Color.clear)
             .accessibilityHidden(true)
-    }
-}
-
-private struct FloatingClickBar: View {
-    @Binding var dragLocked: Bool
-    @Binding var controlMode: LiveScreenView.ControlMode
-    var onKeyboard: () -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            // Mode switcher — without this, fullscreen pointer mode (the
-            // iPhone default) trapped you: no way to reach Touch/View.
-            Menu {
-                Picker("Mode", selection: $controlMode) {
-                    Label("Pointer", systemImage: "cursorarrow").tag(LiveScreenView.ControlMode.pointer)
-                    Label("Touch", systemImage: "hand.tap").tag(LiveScreenView.ControlMode.touch)
-                    Label("View", systemImage: "eye").tag(LiveScreenView.ControlMode.view)
-                }
-            } label: {
-                Image(systemName: "cursorarrow.square")
-                    .imageScale(.large)
-            }
-
-            Button {
-                NetworkManager.shared.sendClick(button: "left")
-            } label: {
-                Image(systemName: "cursorarrow.click")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button {
-                NetworkManager.shared.sendClick(button: "right")
-            } label: {
-                Image(systemName: "cursorarrow.rays")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.bordered)
-
-            Button {
-                dragLocked.toggle()
-                if dragLocked {
-                    NetworkManager.shared.sendMouseDown(button: "left")
-                } else {
-                    NetworkManager.shared.sendMouseUp(button: "left")
-                }
-            } label: {
-                Image(systemName: dragLocked ? "hand.draw.fill" : "hand.draw")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.bordered)
-
-            // The keyboard was unreachable in fullscreen — the whole reason
-            // "there is no button to click to open it".
-            Button(action: onKeyboard) {
-                Image(systemName: "keyboard")
-                    .imageScale(.large)
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(8)
-        .background(.ultraThinMaterial, in: Capsule())
     }
 }
 

@@ -299,7 +299,21 @@ struct ConnectionView: View {
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
     @ObservedObject private var proStore = ProStore.shared
+    @ObservedObject private var tv = TVSceneManager.shared
     @Environment(\.horizontalSizeClass) private var hSize
+
+    private var tvChip: some View {
+        Group {
+            if tv.tvConnected {
+                Label("TV connected — your Mac's screen is on the TV", systemImage: "tv.fill")
+                    .font(.footnote.weight(.medium))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.accentColor.opacity(0.14), in: Capsule())
+            }
+        }
+    }
 
     var body: some View {
         if hSize == .regular {
@@ -310,6 +324,7 @@ struct MainControlView: View {
 
                 VStack(spacing: 12) {
                     TrialBanner()
+                    tvChip
                     quickActions
                     tileGrid(columns: 2)
                     Spacer(minLength: 0)
@@ -321,6 +336,9 @@ struct MainControlView: View {
             VStack(spacing: 12) {
                 TrialBanner()
                     .padding(.top, 4)
+
+                tvChip
+                    .padding(.horizontal)
 
                 trackpad
                     .padding(.horizontal)
@@ -345,7 +363,7 @@ struct MainControlView: View {
         HStack(spacing: 10) {
             // Desktop hop, one tap from the trackpad — no swipe gymnastics.
             Button {
-                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left")
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } label: {
                 Image(systemName: "chevron.left")
@@ -379,7 +397,7 @@ struct MainControlView: View {
             .buttonStyle(.bordered)
 
             Button {
-                NetworkManager.shared.sendSwipe(fingers: 3, direction: "right")
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } label: {
                 Image(systemName: "chevron.right")
@@ -399,6 +417,7 @@ struct MainControlView: View {
             modeTile("Live Screen", "display", pro: true) { LiveScreenView() }
             modeTile("Media", "playpause.fill", pro: true) { MediaControlsView() }
             modeTile("Desktops", "macwindow.on.rectangle", pro: true) { MacSwitcherView() }
+            modeTile("TV Setup", "tv", pro: true) { LiveScreenView(startWithMirrorTip: true) }
             modeTile("Settings", "gearshape") { SettingsView() }
             modeTile("Help", "questionmark.circle") { HelpView() }
         }

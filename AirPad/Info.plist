@@ -24,6 +24,44 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
 
+    <!-- TV Mode: without a scene manifest declaring multi-scene support, iOS
+         never offers the app the external display as its own scene — AirPlay
+         just mirrors the phone. This flag is what lets TVSceneDelegate claim
+         the TV and show the Mac's screen there. (iPhone still shows a single
+         window; multiple scenes only matter for the external display.) -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <true/>
+        <!-- Declaring the external-display configuration here is what makes
+             iOS hand the TV to TVSceneDelegate; relying on the app delegate
+             callback alone is not honored under the SwiftUI lifecycle and the
+             system falls back to mirroring the phone. -->
+        <key>UISceneConfigurations</key>
+        <dict>
+            <!-- Registered under BOTH role spellings: iOS renamed the external
+                 display role and different versions look up different keys. -->
+            <key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>TV</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>$(PRODUCT_MODULE_NAME).TVSceneDelegate</string>
+                </dict>
+            </array>
+            <key>UIWindowSceneSessionRoleExternalDisplay</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>TV-Legacy</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>$(PRODUCT_MODULE_NAME).TVSceneDelegate</string>
+                </dict>
+            </array>
+        </dict>
+    </dict>
+
     <!-- Only exempt encryption (TLS): skips the export-compliance question
          on every App Store upload -->
     <key>ITSAppUsesNonExemptEncryption</key>

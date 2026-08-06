@@ -106,9 +106,9 @@ enum GestureAction: Codable, Equatable, Hashable {
         case .media(_, let action):
             net.sendMedia(action: action)
         case .desktopLeft:
-            net.sendSwipe(fingers: 3, direction: "left")
+            net.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
         case .desktopRight:
-            net.sendSwipe(fingers: 3, direction: "right")
+            net.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
         case .missionControl:
             net.sendSwipe(fingers: 3, direction: "up")
         case .typeText(let text):
@@ -117,6 +117,52 @@ enum GestureAction: Codable, Equatable, Hashable {
             net.sendLaunchApp(bundleIdentifier: bundleID)
         case .openURL(_, let url):
             net.sendOpenURL(url)
+        }
+    }
+}
+
+/// The three built-in hold gestures whose actions users can remap (e.g. make
+/// shaka open Mission Control instead of switching desktops). Defaults match
+/// the original hard-wired behavior; AirPop keeps its own fixed meanings.
+enum BuiltinGestureSlot: String, CaseIterable, Codable {
+    case palmHold, thumbsUp, shaka
+
+    var displayName: String {
+        switch self {
+        case .palmHold: return "Open palm (hold)"
+        case .thumbsUp: return "Thumbs up 👍"
+        case .shaka: return "Shaka 🤙"
+        }
+    }
+
+    var defaultAction: GestureAction {
+        switch self {
+        case .palmHold: return .missionControl
+        case .thumbsUp: return .media(name: "Play / Pause", action: "play_pause")
+        case .shaka: return .desktopRight
+        }
+    }
+}
+
+enum BuiltinGestureMap {
+    private static let key = "builtinGestures.v1"
+
+    static func action(for slot: BuiltinGestureSlot) -> GestureAction {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let map = try? JSONDecoder().decode([BuiltinGestureSlot: GestureAction].self, from: data),
+              let action = map[slot] else { return slot.defaultAction }
+        return action
+    }
+
+    static func set(_ action: GestureAction, for slot: BuiltinGestureSlot) {
+        var map: [BuiltinGestureSlot: GestureAction] = [:]
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([BuiltinGestureSlot: GestureAction].self, from: data) {
+            map = decoded
+        }
+        map[slot] = action
+        if let data = try? JSONEncoder().encode(map) {
+            UserDefaults.standard.set(data, forKey: key)
         }
     }
 }

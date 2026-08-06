@@ -27,10 +27,12 @@ struct HelpView: View {
 
             Section("Hand Mouse (camera)") {
                 gestureRow("hand.point.up.left", "Move", "A relaxed hand steers the cursor (it tracks your knuckles, so clicking won't nudge it). Pinch thumb+index = click; hold the pinch = drag.")
-                gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control.")
+                gestureRow("hand.raised", "Open palm", "Pauses the cursor. Swipe the palm left/right = switch desktop. Hold still ~1s = Mission Control. Palm-hold, thumbs-up, and shaka are remappable in the gesture settings — map them to any action, like opening an app.")
                 gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
                 gestureRow("wand.and.stars", "Gesture Studio", "Record your OWN hand poses (tap the wand on the Hand Mouse screen) and map them to shortcuts, media keys, desktops, or typed text.")
-                helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The border color shows the detected pose. Video is processed on-device and never transmitted.")
+                gestureRow("lock.fill", "Gestures lock in", "Once a pose is recognized it STAYS locked — your hand can drift, relax, or wobble without changing it. To switch, hold the new gesture clearly for a moment: the ring on the pose badge fills as it takes over. Choose Steady, Balanced, or Quick in the gesture settings.")
+                gestureRow("hand.raised.fingers.spread", "Calibrate", "Two seconds with your hand open teaches AirPad your finger proportions — the single biggest improvement if poses feel touchy. Gesture settings → Calibrate my hand.")
+                helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The badge shows the locked pose. Video is processed on-device and never transmitted.")
             }
 
             Section("Media & System") {
@@ -38,6 +40,13 @@ struct HelpView: View {
                 helpRow("Presentation: previous/next slide and blank-screen for Keynote, PowerPoint, and Google Slides.")
                 helpRow("Clipboard: send your iPhone clipboard to the Mac (paste with ⌘V), type it directly, or fetch the Mac's clipboard to your phone.")
                 helpRow("Lock Mac Screen asks for confirmation first.")
+            }
+
+            Section("Show your Mac on a TV") {
+                helpRow("Best way: mirror FROM THE MAC. Tap TV Setup (or the TV button in Live Screen) and follow the tip — use the pointer to click the Mac's Control Center → Screen Mirroring → your TV. The TV gets the Mac at full quality with sound, and the phone stays free for any mode.")
+                helpRow("The Mac's sound can go somewhere else entirely — the Media page has a speaker picker that bounces audio between the TV, headphones, and the Mac's speakers.")
+                helpRow("Alternatives: plug the phone into the TV with an HDMI adapter (the TV shows only the Mac's screen while the phone controls), or mirror the phone from its Control Center — though on some iOS versions the TV then follows you between pages.")
+                helpRow("Live Screen controls: Pointer = trackpad on the video, Touch = tap exactly what you see, View = zoom/pan without clicking. The Desktop ◀ ▶ buttons switch desktops and the picture follows.")
             }
 
             Section("Voice Typing") {

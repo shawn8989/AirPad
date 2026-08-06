@@ -48,12 +48,30 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
 ## 4. Hand Mouse + Gesture Studio (5 min)
 
+Pose latch & calibration:
+
+- [ ] Calibrate my hand: 2s open-hand capture completes, haptic fires, and
+      poses immediately feel less touchy. Survives an app relaunch.
+- [ ] "Use default hand sizing" reverts cleanly.
+- [ ] **The lock:** while pointing, deliberately relax/wobble the hand and
+      curl fingers slightly — the pose badge stays on the SAME pose and the
+      cursor keeps tracking without jumping.
+- [ ] Deliberately forming a different gesture fills the badge ring, then
+      switches within roughly the preset's time (Steady slowest, Quick fastest).
+- [ ] Steady / Balanced / Quick each change how hard it is to knock the pose
+      loose; the setting persists.
+- [ ] Pinch-to-click works while the latched pose is Pointer, Palm, AND
+      Scroll — clicking never requires re-forming a pointer first.
+- [ ] A pinch held in an open palm does NOT also fire a desktop swipe.
+
 - [ ] Relaxed hand steers the cursor; hovering a target is steady (no jitter).
 - [ ] Pinch = click (no cursor jump when pinching); pinch-hold = drag.
-- [ ] Pose changes don't jump the cursor (badge + border update).
+- [ ] Pose changes don't jump the cursor (badge + ring update).
 - [ ] Fist-hold grabs (drag a window by moving the fist); open hand releases.
 - [ ] Open palm: swipe = desktop switch; hold still ~1s = Mission Control.
-- [ ] V-sign scroll; thumbs-up = play/pause; shaka = next desktop.
+- [ ] V-sign scroll; thumbs-up = play/pause; shaka = next desktop (defaults).
+- [ ] Remap: gesture settings → Shaka → Mission Control → shaka now opens
+      Mission Control; the other two keep their defaults until edited.
 - [ ] Gesture toggles in the sheet disable each gesture cleanly.
 - [ ] **Studio:** record a distinctive pose → map to Screenshot → it fires
       within ~1s, once per second max; disable stops it; survives app relaunch.
@@ -130,6 +148,28 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
 - [ ] Pair with both; picker switches on the fly; per-Mac auth works after
       relaunching both apps.
+
+## 8b. Mac on the TV (5 min, needs an AirPlay TV)
+
+Recommended path — mirror FROM the Mac:
+
+- [ ] Home → TV Setup: opens Live Screen with the mirror tip banner; the tip
+      dismisses with the X and doesn't come back until re-entering via TV Setup.
+- [ ] Using the pointer, click the Mac's Control Center → Screen Mirroring →
+      TV: the TV shows the Mac natively; phone navigates all pages freely with
+      the TV unaffected.
+- [ ] TV button in Live Screen opens the setup sheet; "Guide me" shows the tip.
+- [ ] Media page → Mac Sound Output: lists the Mac's speakers with the current
+      one checked; tapping another moves the Mac's audio within ~2s and the
+      checkmark follows; AirBridge Activity logs "Audio output → …".
+
+Phone-side TV Mode (fallback; HDMI adapter or AirPlay if iOS allows the claim):
+
+- [ ] TV shows the MAC's desktop fullscreen (not a phone mirror) within ~2s;
+      "TV connected" chip appears on the home screen.
+- [ ] Leave the phone's Live Screen while claimed → TV picture stays.
+- [ ] Stop mirroring/unplug → phone behaves exactly as before; stream stops
+      when nothing needs it.
 
 ## 9. iPad & extras (2 min, iPad optional)
 
