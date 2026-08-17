@@ -70,6 +70,10 @@ Pose latch & calibration:
 - [ ] Fist-hold grabs (drag a window by moving the fist); open hand releases.
 - [ ] Open palm: swipe = desktop switch; hold still ~1s = Mission Control.
 - [ ] V-sign scroll; thumbs-up = play/pause; shaka = next desktop (defaults).
+- [ ] Media → Scrub Video: Rewind/Forward seek the playing video; Small/Medium/
+      Large change how far one tap jumps.
+- [ ] Connected screen: Click / Right / Keys / Desktop buttons are legible and
+      evenly sized, icons not clipped, on the smallest phone you have.
 - [ ] Remap: gesture settings → Shaka → Mission Control → shaka now opens
       Mission Control; the other two keep their defaults until edited.
 - [ ] Gesture toggles in the sheet disable each gesture cleanly.
@@ -110,6 +114,20 @@ Pose latch & calibration:
       by itself; while streaming, Tab into a field ON THE MAC → it also rises.
       Toggle off "Auto keyboard in Live Screen" in Settings → it stops.
 - [ ] Same keyboard works from the main trackpad screen (button + auto-popup).
+
+## 5d. Live Screen zoom/pan regressions (3 min)
+
+- [ ] Zoom in (View), pan to a corner, switch to Pointer → cursor moves.
+- [ ] Switch to Touch → taps land where you tap on the ZOOMED picture.
+- [ ] Try to drag the picture completely off-screen in View: it stops at the
+      edge and the image is always visible (at 1x it cannot be panned at all).
+- [ ] Debug HUD shows the active mode (POINTER / TOUCH / VIEW).
+
+## 5e. Public Wi-Fi fallback (2 min, needs a café/hotel network)
+
+- [ ] On an isolating network the Mac does not appear (expected).
+- [ ] Turn on iPhone Personal Hotspot, join the Mac to it → Mac appears and
+      everything works, including Live Screen.
 
 ## 5c. Desktops & Apps switcher (2 min)
 

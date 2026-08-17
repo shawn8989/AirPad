@@ -73,6 +73,7 @@ struct HelpView: View {
 
             Section("Troubleshooting") {
                 helpRow("Can't find the Mac? Same Wi-Fi network, AirBridge running, and Local Network permission allowed.")
+                helpRow("On hotel, café, campus, or airport Wi-Fi? Those networks usually block devices from seeing each other, so discovery fails even though both are online. Fix: turn on Personal Hotspot on this iPhone (Settings → Personal Hotspot) and join the Mac to it. You're then on your own private network and everything works normally — including Live Screen.")
                 helpRow("Desktop switching needs more than one desktop (Mission Control > +).")
                 helpRow("Input not working? Check the Mac's Accessibility permission for AirBridge (System Settings > Privacy & Security > Accessibility).")
                 helpRow("Laggy? Lower Live Screen quality, or reconnect.")

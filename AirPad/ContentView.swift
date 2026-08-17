@@ -359,54 +359,56 @@ struct MainControlView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    /// Icon-over-caption buttons. Side-by-side `Label`s squeezed the icon and
+    /// text into each other on a phone — the icons were clipped and the words
+    /// unreadable. Stacking them gives each button a legible fixed height and
+    /// lets all five share the width evenly.
     private var quickActions: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             // Desktop hop, one tap from the trackpad — no swipe gymnastics.
-            Button {
+            quickButton("Desktop", "chevron.left", accessibility: "Previous desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .frame(minWidth: 30)
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Previous desktop")
-
-            Button {
+            quickButton("Click", "cursorarrow.click", prominent: true) {
                 NetworkManager.shared.sendClick(button: "left")
-            } label: {
-                Label("Click", systemImage: "cursorarrow.click")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-
-            Button {
+            quickButton("Right", "cursorarrow.rays") {
                 NetworkManager.shared.sendClick(button: "right")
-            } label: {
-                Label("Right", systemImage: "cursorarrow.rays")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-
-            Button {
+            quickButton("Keys", "keyboard") {
                 showKeyboard = true
-            } label: {
-                Label("Keys", systemImage: "keyboard")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-
-            Button {
+            quickButton("Desktop", "chevron.right", accessibility: "Next desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .frame(minWidth: 30)
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Next desktop")
         }
-        .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func quickButton(_ title: String, _ icon: String, prominent: Bool = false,
+                             accessibility: String? = nil,
+                             action: @escaping () -> Void) -> some View {
+        let label = VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+
+        if prominent {
+            Button(action: action) { label }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel(accessibility ?? title)
+        } else {
+            Button(action: action) { label }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(accessibility ?? title)
+        }
     }
 
     // Modes & tools. Pro tiles route to the paywall once the trial ends.

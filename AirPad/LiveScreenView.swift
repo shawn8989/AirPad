@@ -39,6 +39,8 @@ struct LiveScreenView: View {
     @State private var lastZoom: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    /// Size of the picture area, needed to keep a pan inside the screen.
+    @State private var containerSize: CGSize = .zero
 
     // Streaming parameters
     @State private var quality: Double = 0.7
@@ -64,7 +66,7 @@ struct LiveScreenView: View {
                     // Touch — otherwise lining up a region then switching to
                     // control it snapped the picture back and made View useless.
                     // Only the zoom/pan gestures are View-only.
-                    GeometryReader { _ in
+                    GeometryReader { geo in
                         // The gesture is ATTACHED only in View mode rather than
                         // attached-and-masked. A masked gesture still takes part
                         // in hit-testing, which left Pointer and Touch dead:
@@ -73,11 +75,19 @@ struct LiveScreenView: View {
                         // the other modes is the only version that can't
                         // interfere. The zoom/pan themselves stay applied in
                         // every mode — that part works and is worth keeping.
-                        if controlMode == .view {
-                            liveImage(img)
-                                .gesture(viewGestures())
-                        } else {
-                            liveImage(img)
+                        Group {
+                            if controlMode == .view {
+                                liveImage(img)
+                                    .gesture(viewGestures())
+                            } else {
+                                liveImage(img)
+                            }
+                        }
+                        .onAppear { containerSize = geo.size }
+                        .onChange(of: geo.size) { _, newSize in
+                            containerSize = newSize
+                            offset = clamped(offset)
+                            lastOffset = offset
                         }
                     }
                 } else {
@@ -549,21 +559,37 @@ struct LiveScreenView: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// Keeps a pan within the picture's own bounds. Without this the image
+    /// could be dragged entirely off-screen and STAY there, because the pan now
+    /// persists across modes: the screen looked blank (no picture, no
+    /// placeholder), the pointer still worked because it sends relative deltas,
+    /// and Touch went dead because every tap mapped outside the image. At 1x
+    /// there is nothing to pan, so the offset is pinned to zero.
+    private func clamped(_ proposed: CGSize) -> CGSize {
+        guard containerSize.width > 0, containerSize.height > 0 else { return .zero }
+        let maxX = max(0, (containerSize.width * zoom - containerSize.width) / 2)
+        let maxY = max(0, (containerSize.height * zoom - containerSize.height) / 2)
+        return CGSize(width: min(max(proposed.width, -maxX), maxX),
+                      height: min(max(proposed.height, -maxY), maxY))
+    }
+
     // MARK: - Gestures (view mode)
     private func viewGestures() -> some Gesture {
         let mag = MagnificationGesture()
             .onChanged { value in
-                zoom = (lastZoom * value).clamped(to: 0.5...4.0)
+                zoom = (lastZoom * value).clamped(to: 1.0...4.0)
+                offset = clamped(offset)
                 revealChrome()
             }
             .onEnded { _ in
                 lastZoom = zoom
+                lastOffset = offset
             }
 
         let drag = DragGesture()
             .onChanged { value in
-                offset = CGSize(width: lastOffset.width + value.translation.width,
-                                 height: lastOffset.height + value.translation.height)
+                offset = clamped(CGSize(width: lastOffset.width + value.translation.width,
+                                        height: lastOffset.height + value.translation.height))
                 revealChrome()
             }
             .onEnded { _ in
@@ -575,6 +601,7 @@ struct LiveScreenView: View {
                 withAnimation(.snappy) {
                     if abs(zoom - 1.0) < 0.01 {
                         zoom = 2.0; lastZoom = 2.0
+                        offset = clamped(offset); lastOffset = offset
                     } else {
                         zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero
                     }
