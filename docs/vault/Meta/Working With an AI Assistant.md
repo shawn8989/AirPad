@@ -27,6 +27,24 @@ know them will happily suggest undoing them.
 > One-time purchase, no subscription. No accounts, no server, no analytics.
 > Local network only. iOS 17+, SwiftUI. Solo developer. Pre-1.0.
 
+## Switching tools mid-project (Codex, a fresh session, another model)
+
+Both repos have an **`AGENTS.md`** at the root — the file OpenAI Codex reads
+automatically, and useful to any agent. It carries what a newcomer gets wrong:
+that the code **cannot be built in a Linux agent container** (CI is the only
+verification), the git conventions, and a table of **invariants not to
+"simplify"** — each one a bug that cost real debugging.
+
+So the handoff is: point the tool at the repo, and `AGENTS.md` does the
+briefing. Use this vault for the *why* behind product decisions and for work
+that doesn't need code access at all — naming, listing copy, pricing, launch.
+
+**The failure mode to watch for.** A fresh agent has no memory of the four
+rounds of device testing behind a piece of code. It will look at something like
+the non-suppressing `CGEventSource` and reasonably propose deleting it. That is
+exactly what the invariants table exists to prevent — if a tool suggests undoing
+one, the answer is no, and the reason is written down.
+
 ## Keeping the vault true
 
 The vault is a *summary*, not the source of truth — the code and
