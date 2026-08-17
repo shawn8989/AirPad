@@ -298,9 +298,59 @@ struct ConnectionView: View {
 // grid. iPad / regular width: big trackpad beside a control column.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
+    @ObservedObject private var network = NetworkManager.shared
     @ObservedObject private var proStore = ProStore.shared
     @ObservedObject private var tv = TVSceneManager.shared
     @Environment(\.horizontalSizeClass) private var hSize
+
+    /// Soft nudge when the Mac app is older than this phone app. Deliberately
+    /// NOT a gate: an older AirBridge keeps working, it just can't do the newer
+    /// things, so this says what's missing and gets out of the way. Dismissing
+    /// it is remembered per AirBridge version, so it reappears only if the Mac
+    /// app is still behind after the next phone update.
+    @AppStorage("dismissedBridgeUpdateFor") private var dismissedBridgeUpdateFor = ""
+
+    private var bridgeUpdateChip: some View {
+        Group {
+            if network.bridgeUpdateWouldHelp,
+               dismissedBridgeUpdateFor != (network.bridgeVersion ?? "unknown") {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AirBridge on your Mac is out of date")
+                            .font(.footnote.weight(.semibold))
+                        Text(missingSummary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Update it from AirBridge's menu: Check for Updates.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button {
+                        dismissedBridgeUpdateFor = network.bridgeVersion ?? "unknown"
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private var missingSummary: String {
+        let names = network.bridgeMissingFeatureNames
+        guard !names.isEmpty else {
+            return "Updating unlocks the newest features."
+        }
+        return "Updating adds: " + names.joined(separator: ", ") + "."
+    }
 
     private var tvChip: some View {
         Group {
@@ -324,6 +374,7 @@ struct MainControlView: View {
 
                 VStack(spacing: 12) {
                     TrialBanner()
+                    bridgeUpdateChip
                     tvChip
                     quickActions
                     tileGrid(columns: 2)
@@ -337,6 +388,7 @@ struct MainControlView: View {
                 TrialBanner()
                     .padding(.top, 4)
 
+                bridgeUpdateChip
                 tvChip
                     .padding(.horizontal)
 

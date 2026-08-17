@@ -56,7 +56,14 @@ struct MediaControlsView: View {
                 }
             }
             Section {
-                if network.audioOutputs.isEmpty {
+                if !network.bridgeSupports(BridgeFeature.audioDevices) {
+                    // Older Mac app: say so plainly instead of showing a
+                    // control that silently does nothing.
+                    Label("Needs a newer AirBridge on the Mac — update it there (Check for Updates) to switch speakers from here.",
+                          systemImage: "arrow.up.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if network.audioOutputs.isEmpty {
                     HStack {
                         ProgressView()
                         Text("Asking the Mac for its speakers…")

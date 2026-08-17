@@ -79,6 +79,59 @@ final class NetworkManager: ObservableObject {
     }
     @Published var audioOutputs: [AudioOutputDevice] = []
 
+    // MARK: - What the connected AirBridge can do
+    //
+    // The two apps update through different channels (App Store vs download),
+    // so an older Mac app talking to a newer phone is normal. Rather than
+    // gating the connection on a version, the Mac sends a feature list and we
+    // adapt: missing features are explained in place, everything else works.
+
+    /// AirBridge's marketing version, e.g. "1.0". nil until server_info lands.
+    @Published var bridgeVersion: String?
+    /// Feature ids the connected AirBridge declared (see BridgeFeature).
+    @Published var bridgeFeatures: Set<String> = []
+    /// Coarse compatibility counter; 1 = predates the feature list.
+    @Published var bridgeProtocolVersion: Int = 1
+
+    /// True when the connected Mac app supports a feature. Builds older than
+    /// the feature list send nothing, so we fall back to the features that
+    /// existed before it — never to "nothing works".
+    func bridgeSupports(_ feature: String) -> Bool {
+        if bridgeFeatures.isEmpty {
+            // Pre-feature-list build: these shipped long before it.
+            return [BridgeFeature.desktopPreviews,
+                    BridgeFeature.liveScreen,
+                    BridgeFeature.wakeOnLAN].contains(feature)
+        }
+        return bridgeFeatures.contains(feature)
+    }
+
+    /// True when this AirBridge is missing something this AirPad knows about —
+    /// i.e. updating the Mac app would unlock more. Never blocks anything.
+    var bridgeUpdateWouldHelp: Bool {
+        guard isConnected else { return false }
+        if bridgeFeatures.isEmpty { return true }
+        return !Set(BridgeFeature.all).subtracting(bridgeFeatures).isEmpty
+    }
+
+    /// Human-readable list of what an update would add, for the prompt.
+    var bridgeMissingFeatureNames: [String] {
+        let names: [String: String] = [
+            BridgeFeature.audioDevices: "Mac speaker switching",
+            BridgeFeature.multiDisplaySpaces: "desktops on a second display",
+            BridgeFeature.desktopPreviews: "desktop previews",
+            BridgeFeature.skipFullscreen: "skipping full-screen apps",
+            BridgeFeature.wakeOnLAN: "Wake-on-LAN",
+            BridgeFeature.liveScreen: "Live Screen"
+        ]
+        let missing = bridgeFeatures.isEmpty
+            ? Set(BridgeFeature.all).subtracting([BridgeFeature.desktopPreviews,
+                                                  BridgeFeature.liveScreen,
+                                                  BridgeFeature.wakeOnLAN])
+            : Set(BridgeFeature.all).subtracting(bridgeFeatures)
+        return missing.compactMap { names[$0] }.sorted()
+    }
+
     // True while the Mac reports keyboard focus is in a text field (drives
     // the auto keyboard popup). Set by the "text_focus" message.
     @Published var macTextFieldFocused = false
@@ -673,8 +726,16 @@ final class NetworkManager: ObservableObject {
                     self.currentMacID = macID
                     let macName = payload["macName"] as? String
                     let macAddress = payload["macAddress"] as? String
+                    // What this AirBridge can do. Absent on builds older than
+                    // the feature list itself, which is exactly the case we
+                    // have to survive: treat "no list" as "assume the basics".
+                    let features = payload["features"] as? [String]
+                    let bridgeVersion = payload["appVersion"] as? String
                     DispatchQueue.main.async {
                         self.currentMacName = macName
+                        self.bridgeVersion = bridgeVersion
+                        self.bridgeFeatures = Set(features ?? [])
+                        self.bridgeProtocolVersion = payload["protocolVersion"] as? Int ?? 1
                         // Remember this Mac (name + hardware address) so the
                         // connect screen can offer Wake-on-LAN later.
                         KnownMacStore.upsert(id: macID, name: macName ?? "Mac", macAddress: macAddress)
