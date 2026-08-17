@@ -65,17 +65,20 @@ struct LiveScreenView: View {
                     // control it snapped the picture back and made View useless.
                     // Only the zoom/pan gestures are View-only.
                     GeometryReader { _ in
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .scaleEffect(zoom)
-                            .offset(offset)
-                            .animation(.snappy(duration: 0.15), value: zoom)
-                            .animation(.snappy(duration: 0.15), value: offset)
-                            .gesture(viewGestures(),
-                                     including: controlMode == .view ? .gesture : .none)
+                        // The gesture is ATTACHED only in View mode rather than
+                        // attached-and-masked. A masked gesture still takes part
+                        // in hit-testing, which left Pointer and Touch dead:
+                        // the picture panned in View but no cursor moves or taps
+                        // reached the Mac afterwards. Not attaching it at all in
+                        // the other modes is the only version that can't
+                        // interfere. The zoom/pan themselves stay applied in
+                        // every mode — that part works and is worth keeping.
+                        if controlMode == .view {
+                            liveImage(img)
+                                .gesture(viewGestures())
+                        } else {
+                            liveImage(img)
+                        }
                     }
                 } else {
                     VStack(spacing: 8) {
@@ -149,8 +152,10 @@ struct LiveScreenView: View {
             // affordance (and a direct way back) so the controls are never a
             // secret. Tapping anywhere on the picture also brings them back.
             if !chromeVisible {
+                // Only the pill itself is tappable — a full-frame container
+                // here could swallow touches meant for the trackpad below it.
                 VStack {
-                    Spacer()
+                    Spacer().allowsHitTesting(false)
                     Button {
                         revealChrome()
                     } label: {
@@ -224,6 +229,9 @@ struct LiveScreenView: View {
             VStack {
                 HStack {
                     HStack(spacing: 8) {
+                        // Mode is shown too: when input "does nothing", the
+                        // first question is always which mode is actually live.
+                        Text(controlMode.rawValue.uppercased()).bold()
                         Image(systemName: "cursorarrow.motionlines"); Text("Moves: \(network.debugMouseMoveCount)")
                         Image(systemName: "arrow.up.and.down.and.arrow.left.and.right"); Text("Scrolls: \(network.debugScrollCount)")
                         Image(systemName: "cursorarrow.click"); Text("Clicks: \(network.debugClickCount)")
@@ -292,6 +300,19 @@ struct LiveScreenView: View {
         .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
         .onChange(of: isFullscreen) { _, _ in revealChrome() }
         .onChange(of: controlMode) { _, _ in revealChrome() }
+    }
+
+    /// The streamed picture, carrying whatever zoom/pan View mode set.
+    private func liveImage(_ img: UIImage) -> some View {
+        Image(uiImage: img)
+            .resizable()
+            .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .scaleEffect(zoom)
+            .offset(offset)
+            .animation(.snappy(duration: 0.15), value: zoom)
+            .animation(.snappy(duration: 0.15), value: offset)
     }
 
     // MARK: - Control bar (persistent, labeled)
