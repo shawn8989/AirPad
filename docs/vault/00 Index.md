@@ -20,6 +20,7 @@ Two apps, one product: an iPhone app that controls a Mac over the local network.
 | Shipping it | [[App Store Checklist]] · [[Naming Decision]] |
 | What's next | [[Backlog]] · [[Multipeer Transport]] · [[Voice Agent]] |
 | Handing this to another AI | [[Working With an AI Assistant]] |
+| Setting up Obsidian | [[Connecting This Vault To Obsidian]] |
 
 ## Status at a glance
 
