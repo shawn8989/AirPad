@@ -29,12 +29,14 @@ single most likely rejection.
 
 | Field | Value |
 |---|---|
-| Bundle ID | `com.SOTechy.AirPad` |
-| SKU | `airpad-1` |
+| Platforms | iOS only — the Mac app ships outside the store |
+| Bundle ID | `com.SOTechy.AirPad` (register it in Certificates, Identifiers & Profiles first if it isn't in the dropdown) |
+| SKU | `wield-1` (internal only, but permanent) |
 | Primary category | Utilities |
 | Secondary category | Productivity |
 | Age rating | 4+ |
 | Price | Free (with In-App Purchase) |
+| User Access | Full Access |
 
 ### Name and subtitle
 
