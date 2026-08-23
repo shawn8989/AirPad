@@ -138,7 +138,11 @@ duplicate is a wasted slot.
 | Product ID | `com.airpad.pro.lifetime` |
 | Price | Tier of your choice (suggest $9.99) |
 | Display Name | Wield Pro |
-| Description | Unlocks Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher. One-time purchase, yours forever. |
+| Description (**under 55 chars**) | `Live Screen, Hand Mouse, and gestures. Yours forever.` — 53 |
+
+The IAP description limit is 55 characters, not the app description's 4000.
+Anything longer is rejected in the form, and exactly 55 fails too — the rule
+is *less than* 55.
 
 **The Product ID must match exactly** — it is hardcoded in `ProStore.swift` and
 cannot be changed after creation. A typo means creating a new product.
