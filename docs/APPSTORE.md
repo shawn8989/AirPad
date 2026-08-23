@@ -35,6 +35,9 @@ single most likely rejection.
 | Primary category | Utilities |
 | Secondary category | Productivity |
 | Age rating | 4+ |
+| Version release | **Manually release** — control your own launch day |
+| Sign-in required | **No** — there is no account system |
+| Routing coverage file / App Clip / iMessage | leave empty |
 | Price | Free (with In-App Purchase) |
 | User Access | Full Access |
 
@@ -61,8 +64,7 @@ Fallback if this is ever refused: `Sleight` (checked, appears free).
 ### Promotional text (170 max, editable without review)
 
 ```
-Now with hand-gesture control, live screen streaming, and a TV mode — turn your
-iPhone into a trackpad, keyboard, and remote for your Mac.
+Your Mac, from across the room. Trackpad, keyboard, live screen, and hand-gesture control — over your own Wi-Fi, with no account and no subscription.
 ```
 
 ### Description
