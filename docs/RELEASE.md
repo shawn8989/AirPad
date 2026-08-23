@@ -1,7 +1,7 @@
-# AirPad 1.0 — Release Playbook
+# Wield 1.0 — Release Playbook
 
-Everything you (the developer) do on your Mac to ship AirPad to the App Store and
-distribute AirBridge. Work top to bottom; each section is a checklist.
+Everything you (the developer) do on your Mac to ship Wield to the App Store and
+distribute Wield Host. Work top to bottom; each section is a checklist.
 
 ---
 
@@ -12,20 +12,20 @@ distribute AirBridge. Work top to bottom; each section is a checklist.
       "Personal Team" to a full team. Re-select the team in **both** projects'
       Signing & Capabilities.
 - [ ] Pick final bundle IDs and set them in Xcode (Signing & Capabilities):
-  - AirPad iOS: e.g. `com.<yourname>.airpad`
-  - AirBridge macOS: e.g. `com.<yourname>.airbridge`
+  - Wield iOS: e.g. `com.<yourname>.airpad`
+  - Wield Host macOS: e.g. `com.<yourname>.airbridge`
 - [ ] In Xcode, set **Version 1.0.0 / Build 1** on both targets.
 
 ## 1. App Store Connect (iOS app)
 
 1. https://appstoreconnect.apple.com → My Apps → **+ New App**
-   - Platform iOS, name **AirPad**, language, the bundle ID above, SKU `airpad-ios`.
+   - Platform iOS, name **Wield**, language, the bundle ID above, SKU `airpad-ios`.
 2. **In-App Purchase** (Features → In-App Purchases → +):
    - Type: **Non-Consumable**
    - Product ID: `com.airpad.pro.lifetime`  ← must match `ProStore.productID`
-   - Reference name: AirPad Pro (Lifetime)
+   - Reference name: Wield Pro (Lifetime)
    - Price: **$7.99 tier** (set an introductory launch sale to $4.99 manually later)
-   - Localized display name: "AirPad Pro" / description: "Unlock Air Mouse, Hand
+   - Localized display name: "Wield Pro" / description: "Unlock Air Mouse, Hand
      Mouse, media & presentation remote, dictation, live screen, and multi-Mac."
    - Add a screenshot of the paywall for IAP review.
 3. **App Privacy** (nutrition label). Everything is processed on-device;
@@ -33,7 +33,7 @@ distribute AirBridge. Work top to bottom; each section is a checklist.
    - Data collection: **"Data Not Collected"** (you collect nothing, no analytics SDKs).
    - The camera/mic/speech/local-network permission strings are already in Info.plist.
 4. **App Review notes** (important — reviewers can't easily test a two-device
-   LAN app): explain that the app controls a Mac running the free AirBridge
+   LAN app): explain that the app controls a Mac running the free Wield Host
    companion (give the download URL), and include a short demo video link.
 
 ### Local StoreKit testing (no App Store Connect needed)
@@ -45,7 +45,7 @@ distribute AirBridge. Work top to bottom; each section is a checklist.
 
 ## 2. App Store metadata (draft — edit to taste)
 
-**Name:** AirPad — Trackpad & Remote for Mac
+**Name:** Wield — Trackpad & Remote for Mac
 **Subtitle:** Trackpad, air mouse & hand gestures
 
 **Keywords:**
@@ -68,11 +68,11 @@ distribute AirBridge. Work top to bottom; each section is a checklist.
 > entirely on your iPhone and never transmitted.
 >
 > Free forever: trackpad, keyboard, and one Mac.
-> AirPad Pro (one-time purchase — no ads, no subscription): Air Mouse, Hand
+> Wield Pro (one-time purchase — no ads, no subscription): Air Mouse, Hand
 > Mouse, media & presentation remote, dictation, live screen, apps, and
 > multi-Mac switching. 7-day free trial of everything.
 >
-> Requires the free AirBridge companion app on your Mac: <landing page URL>
+> Requires the free Wield Host companion app on your Mac: <landing page URL>
 
 **Screenshot shot-list** (6.7" iPhone required; take in light mode, connected):
 1. Trackpad screen with touch indicator dots visible.
@@ -84,28 +84,28 @@ distribute AirBridge. Work top to bottom; each section is a checklist.
 
 ## 3. TestFlight
 
-- [ ] Xcode → Product → Archive (AirPad, Any iOS Device) → Distribute → App Store Connect → Upload.
+- [ ] Xcode → Product → Archive (Wield, Any iOS Device) → Distribute → App Store Connect → Upload.
 - [ ] App Store Connect → TestFlight → add yourself + friends as internal testers.
 - [ ] Verify on a clean device: onboarding → pairing → trial banner → all features → sandbox purchase.
 
-## 4. AirBridge (Mac) distribution — NOT the Mac App Store
+## 4. Wield Host (Mac) distribution — NOT the Mac App Store
 
-AirBridge uses the Accessibility API and a private framework for Spaces, which
+Wield Host uses the Accessibility API and a private framework for Spaces, which
 the Mac App Store doesn't allow. Ship it as a notarized direct download —
 same as every app in this category.
 
-- [ ] In Xcode (AirBridge project → Signing): select your team, signing
+- [ ] In Xcode (Wield Host project → Signing): select your team, signing
       certificate **Developer ID Application** (Xcode creates it on demand).
 - [ ] Create an App Store Connect **API key** or an app-specific password for
       `notarytool`: https://support.apple.com/en-us/102654, then store it:
       `xcrun notarytool store-credentials airbridge-notary --apple-id you@example.com --team-id TEAMID --password app-specific-password`
-- [ ] Run `scripts/make-dmg.sh` (in the AirBridge repo). It archives, signs,
-      notarizes, staples, and produces `dist/AirBridge.dmg`.
+- [ ] Run `scripts/make-dmg.sh` (in the Wield Host repo). It archives, signs,
+      notarizes, staples, and produces `dist/Wield Host.dmg`.
 - [ ] Create a GitHub Release on `shawn8989/AirBridge-mac`, attach the DMG.
 - [ ] Put the release URL in: the App Store description, the app's onboarding,
       and your landing page.
 
-**Landing page + privacy policy (already built):** the AirBridge repo contains a
+**Landing page + privacy policy (already built):** the Wield Host repo contains a
 complete static site at `docs/index.html` and `docs/privacy.html`.
 - [ ] Enable it: GitHub → shawn8989/AirBridge-mac → Settings → Pages →
       Source: "Deploy from a branch" → Branch `main`, folder `/docs` → Save.
@@ -120,7 +120,7 @@ complete static site at `docs/index.html` and `docs/privacy.html`.
 
 - [ ] Merge dev branch to `main` in both repos; tag `v1.0.0`.
 - [ ] Submit iOS app + IAP for review together.
-- [ ] Publish the AirBridge GitHub Release.
+- [ ] Publish the Wield Host GitHub Release.
 - [ ] Record 2–3 vertical demo clips (Hand Mouse pinch-click, Air Mouse
       pointing, palm-swipe desktop switch) for TikTok/Reels/Shorts.
 - [ ] Product Hunt + r/macapps post on launch day.

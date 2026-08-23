@@ -9,7 +9,7 @@ struct OnboardingView: View {
             OnboardingPage(
                 title: "Control your Mac",
                 systemImage: "bonjour",
-                text: "AirPad finds your Macs on the local network and connects over an encrypted, paired channel. Approve the pairing once on the Mac and you're in — switch between Macs anytime from the picker at the top."
+                text: "Wield finds your Macs on the local network and connects over an encrypted, paired channel. Approve the pairing once on the Mac and you're in — switch between Macs anytime from the picker at the top."
             )
             OnboardingPage(
                 title: "Trackpad",

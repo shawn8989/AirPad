@@ -1,0 +1,9 @@
+# Obsidian per-machine UI state — noisy in git, meaningless on another machine.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.trash/
+
+# Everything else under .obsidian/ (settings, enabled plugins, hotkeys) is
+# deliberately NOT ignored: committing it means the vault's setup travels with
+# the repo, so a second machine opens the same configured vault.

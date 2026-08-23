@@ -4,9 +4,9 @@ struct HelpView: View {
     var body: some View {
         List {
             Section("Getting Started") {
-                helpRow("1. Run AirBridge on your Mac (menu bar).")
+                helpRow("1. Run Wield Host on your Mac (menu bar).")
                 helpRow("2. Put both devices on the same Wi-Fi network.")
-                helpRow("3. Pick your Mac in AirPad and approve the pairing dialog on the Mac — once per device.")
+                helpRow("3. Pick your Mac in Wield and approve the pairing dialog on the Mac — once per device.")
                 helpRow("Switch Macs anytime from the picker in the top-left of the control screen.")
             }
 
@@ -31,7 +31,7 @@ struct HelpView: View {
                 gestureRow("hand.point.up.braille", "Two-finger V", "Index+middle up: move your hand up/down to scroll.")
                 gestureRow("wand.and.stars", "Gesture Studio", "Record your OWN hand poses (tap the wand on the Hand Mouse screen) and map them to shortcuts, media keys, desktops, or typed text.")
                 gestureRow("lock.fill", "Gestures lock in", "Once a pose is recognized it STAYS locked — your hand can drift, relax, or wobble without changing it. To switch, hold the new gesture clearly for a moment: the ring on the pose badge fills as it takes over. Choose Steady, Balanced, or Quick in the gesture settings.")
-                gestureRow("hand.raised.fingers.spread", "Calibrate", "Two seconds with your hand open teaches AirPad your finger proportions — the single biggest improvement if poses feel touchy. Gesture settings → Calibrate my hand.")
+                gestureRow("hand.raised.fingers.spread", "Calibrate", "Two seconds with your hand open teaches Wield your finger proportions — the single biggest improvement if poses feel touchy. Gesture settings → Calibrate my hand.")
                 helpRow("Tips: good lighting, hand 1–2 ft from the phone, palm facing the camera. The badge shows the locked pose. Video is processed on-device and never transmitted.")
             }
 
@@ -67,14 +67,15 @@ struct HelpView: View {
             }
 
             Section("Away From Home (Pro)") {
-                helpRow("AirPad is designed for your own Wi-Fi, but Pro users can control their Mac from anywhere with a personal VPN like Tailscale (free): install it on the Mac and this device, then use Wake / IP → Connect by Address with the Mac's VPN address. AirBridge listens on port 52417.")
+                helpRow("Wield is designed for your own Wi-Fi, but Pro users can control their Mac from anywhere with a personal VPN like Tailscale (free): install it on the Mac and this device, then use Wake / IP → Connect by Address with the Mac's VPN address. Wield Host listens on port 52417.")
                 helpRow("Wake a sleeping Mac: the Wake / IP menu sends a wake-up signal to any Mac you've paired with. On the Mac, turn on System Settings → Battery → Options → \"Wake for network access\". Moving the trackpad also wakes a dark display.")
             }
 
             Section("Troubleshooting") {
-                helpRow("Can't find the Mac? Same Wi-Fi network, AirBridge running, and Local Network permission allowed.")
+                helpRow("Can't find the Mac? Same Wi-Fi network, Wield Host running, and Local Network permission allowed.")
+                helpRow("On hotel, café, campus, or airport Wi-Fi? Those networks usually block devices from seeing each other, so discovery fails even though both are online. Fix: turn on Personal Hotspot on this iPhone (Settings → Personal Hotspot) and join the Mac to it. You're then on your own private network and everything works normally — including Live Screen.")
                 helpRow("Desktop switching needs more than one desktop (Mission Control > +).")
-                helpRow("Input not working? Check the Mac's Accessibility permission for AirBridge (System Settings > Privacy & Security > Accessibility).")
+                helpRow("Input not working? Check the Mac's Accessibility permission for Wield Host (System Settings > Privacy & Security > Accessibility).")
                 helpRow("Laggy? Lower Live Screen quality, or reconnect.")
                 helpRow("Pairing errors? Forget Server on the phone, then reconnect and approve again.")
             }

@@ -30,7 +30,7 @@ struct MacSwitcherView: View {
     private static let junkApps: Set<String> = [
         "Dock", "WindowManager", "Window Server", "Control Center", "Control Centre",
         "Notification Center", "Notification Centre", "Spotlight", "Wallpaper",
-        "CoreServicesUIAgent", "TextInputMenuAgent", "Screenshot", "AirBridge",
+        "CoreServicesUIAgent", "TextInputMenuAgent", "Screenshot", "Wield Host",
         "Universal Control", "loginwindow", "Shortcuts Events"
     ]
 

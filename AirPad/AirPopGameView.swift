@@ -597,7 +597,7 @@ struct AirPopGameView: View {
                         .buttonStyle(.borderedProminent)
 
                         if engine.permissionDenied {
-                            Text("Camera access is off — enable it in Settings › AirPad.")
+                            Text("Camera access is off — enable it in Settings › Wield.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
                         }

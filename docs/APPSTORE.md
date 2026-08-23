@@ -1,4 +1,4 @@
-# AirPad — App Store submission pack
+# Wield — App Store submission pack
 
 Everything needed for the App Store Connect record, plus the order to do it in.
 Copy/paste the metadata blocks straight into ASC.
@@ -7,14 +7,14 @@ Copy/paste the metadata blocks straight into ASC.
 
 ## 0. Do these in order
 
-App Review **cannot test AirPad without a Mac running AirBridge**, so the Mac
+App Review **cannot test Wield without a Mac running Wield Host**, so the Mac
 app has to be public before the iOS app is submitted. Out of order, this is the
 single most likely rejection.
 
-1. **Ship AirBridge first** — Developer ID sign + notarize + staple, publish a
+1. **Ship Wield Host first** — Developer ID sign + notarize + staple, publish a
    GitHub Release, confirm the download link works from a clean machine.
-   (See `RELEASE.md` in the AirBridge repo and `scripts/make-dmg.sh`.)
-2. Enable GitHub Pages on the AirBridge repo (`main` / `docs`) so the privacy
+   (See `RELEASE.md` in the Wield Host repo and `scripts/make-dmg.sh`.)
+2. Enable GitHub Pages on the Wield Host repo (`main` / `docs`) so the privacy
    policy and support URLs resolve. **ASC rejects unreachable URLs.**
 3. Sign the **Paid Applications Agreement** in ASC → Business. In-app purchases
    cannot be created, let alone approved, until this is active.
@@ -29,31 +29,42 @@ single most likely rejection.
 
 | Field | Value |
 |---|---|
-| Bundle ID | `com.SOTechy.AirPad` |
-| SKU | `airpad-1` |
+| Platforms | iOS only — the Mac app ships outside the store |
+| Bundle ID | `com.SOTechy.AirPad` (register it in Certificates, Identifiers & Profiles first if it isn't in the dropdown) |
+| SKU | `wield-1` (internal only, but permanent) |
 | Primary category | Utilities |
 | Secondary category | Productivity |
 | Age rating | 4+ |
+| Version release | **Manually release** — control your own launch day |
+| Sign-in required | **No** — there is no account system |
+| Routing coverage file / App Clip / iMessage | leave empty |
 | Price | Free (with In-App Purchase) |
+| User Access | Full Access |
 
 ### Name and subtitle
 
-The name is a decision you should make deliberately — "AirPad" is close to
-Apple's "iPad" and "AirPlay" marks, and Apple does reject names it reads as
-implying an Apple product. Safer alternatives keep the brand while removing the
-collision:
+| Field | Value |
+|---|---|
+| **Name** (30 max) | `Wield: Mac Remote & Trackpad` — 28 chars |
+| **Subtitle** (30 max) | `Hand gestures & live screen` — 27 chars |
+| Home-screen name | `Wield` (`CFBundleDisplayName`) |
 
-- `AirPad: Mac Remote Trackpad` — current name, some risk
-- `SO Techy Remote for Mac` — low risk, weaker brand
-- `HandPad — Mac Remote Control` — low risk, keeps the gesture hook
+The bare name `Wield` was already reserved in App Store Connect by someone else,
+though no app by that name is published — a dormant reservation blocks only the
+exact string. `Wield: …` keeps the brand as the first word (what users say, and
+what the icon shows) while the descriptor does real work: **the name field is
+Apple's highest-weighted search field**, so "Mac Remote" and "Trackpad" earn
+more there than in keywords.
 
-Subtitle (30 char max): `Trackpad & remote for your Mac`
+Because the name now carries those terms, the subtitle and keywords deliberately
+cover different ground — repeating a word across fields wastes the space.
+
+Fallback if this is ever refused: `Sleight` (checked, appears free).
 
 ### Promotional text (170 max, editable without review)
 
 ```
-Now with hand-gesture control, live screen streaming, and a TV mode — turn your
-iPhone into a trackpad, keyboard, and remote for your Mac.
+Your Mac, from across the room. Trackpad, keyboard, live screen, and hand-gesture control — over your own Wi-Fi, with no account and no subscription.
 ```
 
 ### Description
@@ -61,7 +72,7 @@ iPhone into a trackpad, keyboard, and remote for your Mac.
 ```
 Turn your iPhone into a wireless trackpad, keyboard, and remote control for your Mac.
 
-AirPad connects straight to your Mac over your own Wi-Fi network. No account, no cloud, no subscription — your Mac and your phone talk directly to each other.
+Wield connects straight to your Mac over your own Wi-Fi network. No account, no cloud, no subscription — your Mac and your phone talk directly to each other.
 
 PRECISION TRACKPAD
 A full multi-touch trackpad with tap, right-click, two-finger scroll, pinch to zoom, and three-finger swipes between desktops. It feels like the trackpad you already know.
@@ -85,23 +96,26 @@ MEDIA REMOTE
 Play/pause, skip tracks, volume, and brightness — with the current track shown on screen. Move your Mac's sound to a TV, headphones, or its own speakers without touching the Mac.
 
 WATCH ON YOUR TV
-Mirror your Mac to a TV and use AirPad as the remote — perfect when the computer is in another room.
+Mirror your Mac to a TV and use Wield as the remote — perfect when the computer is in another room.
 
 WAKE YOUR MAC
 Wake a sleeping Mac from the app, and connect by address when you're on a VPN.
 
 FREE + PRO
-The trackpad, keyboard, and media controls are free forever. AirPad Pro unlocks Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher with a one-time purchase — no subscription. Every new install starts with a 7-day free trial of everything.
+The trackpad, keyboard, and media controls are free forever. Wield Pro unlocks Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher with a one-time purchase — no subscription. Every new install starts with a 7-day free trial of everything.
 
 REQUIREMENTS
-AirPad needs the free AirBridge companion app running on your Mac (macOS 13 or later), and both devices on the same network. Download it at: https://shawn8989.github.io/AirBridge-mac/
+Wield needs the free Wield Host companion app running on your Mac (macOS 13 or later), and both devices on the same network. Download it at: https://shawn8989.github.io/AirBridge-mac/
 ```
 
 ### Keywords (100 char max, comma separated, no spaces)
 
 ```
-mac,remote,trackpad,mouse,keyboard,control,touchpad,desktop,screen,gesture,presenter,clicker,wifi
+mouse,keyboard,control,touchpad,desktop,presenter,clicker,wifi,pointer,wireless,spaces,laptop
 ```
+
+No term here repeats the name or subtitle — Apple indexes all three, so a
+duplicate is a wasted slot.
 
 ### URLs
 
@@ -120,10 +134,10 @@ mac,remote,trackpad,mouse,keyboard,control,touchpad,desktop,screen,gesture,prese
 | Field | Value |
 |---|---|
 | Type | Non-Consumable |
-| Reference Name | AirPad Pro Lifetime |
+| Reference Name | Wield Pro Lifetime |
 | Product ID | `com.airpad.pro.lifetime` |
 | Price | Tier of your choice (suggest $9.99) |
-| Display Name | AirPad Pro |
+| Display Name | Wield Pro |
 | Description | Unlocks Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher. One-time purchase, yours forever. |
 
 **The Product ID must match exactly** — it is hardcoded in `ProStore.swift` and
@@ -137,27 +151,27 @@ is fine) and must be attached to the app version before submitting.
 ## 3. Reviewer notes — paste into "Notes" (this is the important one)
 
 ```
-IMPORTANT — AirPad is a remote control for a Mac and requires its free companion app to function.
+IMPORTANT — Wield is a remote control for a Mac and requires its free companion app to function.
 
 To test:
-1. On a Mac (macOS 13 or later), download and open AirBridge:
+1. On a Mac (macOS 13 or later), download and open Wield Host:
    https://shawn8989.github.io/AirBridge-mac/
    It is free, requires no account, and is signed and notarized by us.
-2. On first launch AirBridge asks for two macOS permissions — Accessibility and
+2. On first launch Wield Host asks for two macOS permissions — Accessibility and
    Screen Recording. Both must be granted in System Settings > Privacy &
-   Security for input control and screen streaming to work. AirBridge shows an
+   Security for input control and screen streaming to work. Wield Host shows an
    on-screen checklist that links directly to those panels.
 3. Put the iPhone and the Mac on the same Wi-Fi network.
-4. Open AirPad on the iPhone. The Mac appears automatically in the list (it is
+4. Open Wield on the iPhone. The Mac appears automatically in the list (it is
    discovered by Bonjour). Tap it to connect, and approve the pairing prompt
    that appears on the Mac.
 5. The trackpad now controls the Mac's cursor.
 
-Without a Mac running AirBridge, the app will show "Looking for your Mac" and no
+Without a Mac running Wield Host, the app will show "Looking for your Mac" and no
 features can be exercised. We have included a demo video showing the full flow.
 
 IN-APP PURCHASE
-AirPad Pro (com.airpad.pro.lifetime) is a one-time non-consumable unlock for
+Wield Pro (com.airpad.pro.lifetime) is a one-time non-consumable unlock for
 Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher. Every new
 install begins with an automatic 7-day free trial of these features, so all Pro
 functionality is testable without purchasing. There is no account system: the
@@ -222,7 +236,7 @@ any personal data on the Mac's screen in the captures.
 ### What's New (first release)
 
 ```
-The first release of AirPad. Turn your iPhone into a trackpad, keyboard, live
+The first release of Wield. Turn your iPhone into a trackpad, keyboard, live
 screen, and gesture remote for your Mac.
 ```
 
@@ -232,8 +246,8 @@ screen, and gesture remote for your Mac.
 
 | Risk | Mitigation |
 |---|---|
-| Reviewer can't test without a Mac | Reviewer notes above + demo video + working AirBridge download link |
-| Name reads as an Apple product ("AirPad" vs "iPad") | Decide the name before submitting; alternatives listed in §1 |
+| Reviewer can't test without a Mac | Reviewer notes above + demo video + working Wield Host download link |
+| Name reads as an Apple product ("Wield" vs "iPad") | Decide the name before submitting; alternatives listed in §1 |
 | Local Network permission prompt looks unexplained | `NSLocalNetworkUsageDescription` already explains it; the onboarding screen also explains it before the prompt |
 | Camera permission on a "remote control" app | Purpose string states on-device-only hand tracking; Hand Mouse is clearly gated behind an explicit user action |
 | IAP not attached to the version | Attach `com.airpad.pro.lifetime` to the build in ASC before submitting |

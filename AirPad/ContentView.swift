@@ -62,7 +62,7 @@ struct ContentView: View {
                     ConnectionView()
                 }
             }
-            .navigationTitle(network.isConnected ? (network.currentMacName ?? "AirPad") : "AirPad")
+            .navigationTitle(network.isConnected ? (network.currentMacName ?? "Wield") : "Wield")
             .sheet(isPresented: $showMultiMacPaywall) {
                 NavigationStack { PaywallView() }
             }
@@ -173,7 +173,7 @@ struct ConnectionView: View {
                             .symbolEffect(.variableColor.iterative, options: .repeating, isActive: true)
                         Text("Searching for Macs…")
                             .font(.headline)
-                        Text("Open AirBridge on your Mac and make sure both devices are on the same Wi-Fi network.")
+                        Text("Open Wield Host on your Mac and make sure both devices are on the same Wi-Fi network.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -272,7 +272,7 @@ struct ConnectionView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. AirBridge listens on port \(String(NetworkManager.defaultPort)).")
+            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. Wield Host listens on port \(String(NetworkManager.defaultPort)).")
         }
         .alert("Wake packet sent", isPresented: .init(
             get: { wokeMacName != nil },
@@ -298,9 +298,59 @@ struct ConnectionView: View {
 // grid. iPad / regular width: big trackpad beside a control column.
 struct MainControlView: View {
     @Binding var showKeyboard: Bool
+    @ObservedObject private var network = NetworkManager.shared
     @ObservedObject private var proStore = ProStore.shared
     @ObservedObject private var tv = TVSceneManager.shared
     @Environment(\.horizontalSizeClass) private var hSize
+
+    /// Soft nudge when the Mac app is older than this phone app. Deliberately
+    /// NOT a gate: an older AirBridge keeps working, it just can't do the newer
+    /// things, so this says what's missing and gets out of the way. Dismissing
+    /// it is remembered per AirBridge version, so it reappears only if the Mac
+    /// app is still behind after the next phone update.
+    @AppStorage("dismissedBridgeUpdateFor") private var dismissedBridgeUpdateFor = ""
+
+    private var bridgeUpdateChip: some View {
+        Group {
+            if network.bridgeUpdateWouldHelp,
+               dismissedBridgeUpdateFor != (network.bridgeVersion ?? "unknown") {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Wield Host on your Mac is out of date")
+                            .font(.footnote.weight(.semibold))
+                        Text(missingSummary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Update it from Wield Host's menu: Check for Updates.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button {
+                        dismissedBridgeUpdateFor = network.bridgeVersion ?? "unknown"
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private var missingSummary: String {
+        let names = network.bridgeMissingFeatureNames
+        guard !names.isEmpty else {
+            return "Updating unlocks the newest features."
+        }
+        return "Updating adds: " + names.joined(separator: ", ") + "."
+    }
 
     private var tvChip: some View {
         Group {
@@ -324,6 +374,7 @@ struct MainControlView: View {
 
                 VStack(spacing: 12) {
                     TrialBanner()
+                    bridgeUpdateChip
                     tvChip
                     quickActions
                     tileGrid(columns: 2)
@@ -337,6 +388,7 @@ struct MainControlView: View {
                 TrialBanner()
                     .padding(.top, 4)
 
+                bridgeUpdateChip
                 tvChip
                     .padding(.horizontal)
 
@@ -359,54 +411,56 @@ struct MainControlView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    /// Icon-over-caption buttons. Side-by-side `Label`s squeezed the icon and
+    /// text into each other on a phone — the icons were clipped and the words
+    /// unreadable. Stacking them gives each button a legible fixed height and
+    /// lets all five share the width evenly.
     private var quickActions: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             // Desktop hop, one tap from the trackpad — no swipe gymnastics.
-            Button {
+            quickButton("Desktop", "chevron.left", accessibility: "Previous desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .frame(minWidth: 30)
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Previous desktop")
-
-            Button {
+            quickButton("Click", "cursorarrow.click", prominent: true) {
                 NetworkManager.shared.sendClick(button: "left")
-            } label: {
-                Label("Click", systemImage: "cursorarrow.click")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-
-            Button {
+            quickButton("Right", "cursorarrow.rays") {
                 NetworkManager.shared.sendClick(button: "right")
-            } label: {
-                Label("Right", systemImage: "cursorarrow.rays")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-
-            Button {
+            quickButton("Keys", "keyboard") {
                 showKeyboard = true
-            } label: {
-                Label("Keys", systemImage: "keyboard")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-
-            Button {
+            quickButton("Desktop", "chevron.right", accessibility: "Next desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .frame(minWidth: 30)
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Next desktop")
         }
-        .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private func quickButton(_ title: String, _ icon: String, prominent: Bool = false,
+                             accessibility: String? = nil,
+                             action: @escaping () -> Void) -> some View {
+        let label = VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+
+        if prominent {
+            Button(action: action) { label }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel(accessibility ?? title)
+        } else {
+            Button(action: action) { label }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(accessibility ?? title)
+        }
     }
 
     // Modes & tools. Pro tiles route to the paywall once the trial ends.
@@ -490,13 +544,13 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Section("AirPad Pro") {
+            Section("Wield Pro") {
                 if ProStore.shared.purchased {
                     Label("Pro unlocked — thank you!", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Color.accentColor)
                 } else {
                     NavigationLink(destination: PaywallView()) {
-                        Label("Unlock AirPad Pro", systemImage: "wand.and.stars")
+                        Label("Unlock Wield Pro", systemImage: "wand.and.stars")
                     }
                     Button {
                         Task { await ProStore.shared.restore() }
@@ -517,9 +571,9 @@ struct SettingsView: View {
                         UIApplication.shared.open(url)
                     }
                 } label: {
-                    Label("Rate AirPad", systemImage: "star")
+                    Label("Rate Wield", systemImage: "star")
                 }
-                Text("AirPad turns your iPhone into a trackpad, keyboard, motion pointer, and camera-gesture controller for your Mac. Everything runs on your local network — nothing is collected or sent anywhere else.")
+                Text("Wield turns your iPhone into a trackpad, keyboard, motion pointer, and camera-gesture controller for your Mac. Everything runs on your local network — nothing is collected or sent anywhere else.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

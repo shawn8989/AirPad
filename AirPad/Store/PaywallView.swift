@@ -22,7 +22,7 @@ struct PaywallView: View {
                     .foregroundStyle(Color.accentColor)
                     .padding(.top, 24)
 
-                Text("AirPad Pro")
+                Text("Wield Pro")
                     .font(.largeTitle.bold())
 
                 Text("No ads. No subscription.\nOne price, yours forever.")
@@ -95,7 +95,7 @@ struct PaywallView: View {
                     .padding(.bottom, 24)
             }
         }
-        .navigationTitle("AirPad Pro")
+        .navigationTitle("Wield Pro")
         .navigationBarTitleDisplayMode(.inline)
     }
 

@@ -39,6 +39,8 @@ struct LiveScreenView: View {
     @State private var lastZoom: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    /// Size of the picture area, needed to keep a pan inside the screen.
+    @State private var containerSize: CGSize = .zero
 
     // Streaming parameters
     @State private var quality: Double = 0.7
@@ -64,18 +66,29 @@ struct LiveScreenView: View {
                     // Touch — otherwise lining up a region then switching to
                     // control it snapped the picture back and made View useless.
                     // Only the zoom/pan gestures are View-only.
-                    GeometryReader { _ in
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .scaleEffect(zoom)
-                            .offset(offset)
-                            .animation(.snappy(duration: 0.15), value: zoom)
-                            .animation(.snappy(duration: 0.15), value: offset)
-                            .gesture(viewGestures(),
-                                     including: controlMode == .view ? .gesture : .none)
+                    GeometryReader { geo in
+                        // The gesture is ATTACHED only in View mode rather than
+                        // attached-and-masked. A masked gesture still takes part
+                        // in hit-testing, which left Pointer and Touch dead:
+                        // the picture panned in View but no cursor moves or taps
+                        // reached the Mac afterwards. Not attaching it at all in
+                        // the other modes is the only version that can't
+                        // interfere. The zoom/pan themselves stay applied in
+                        // every mode — that part works and is worth keeping.
+                        Group {
+                            if controlMode == .view {
+                                liveImage(img)
+                                    .gesture(viewGestures())
+                            } else {
+                                liveImage(img)
+                            }
+                        }
+                        .onAppear { containerSize = geo.size }
+                        .onChange(of: geo.size) { _, newSize in
+                            containerSize = newSize
+                            offset = clamped(offset)
+                            lastOffset = offset
+                        }
                     }
                 } else {
                     VStack(spacing: 8) {
@@ -85,7 +98,7 @@ struct LiveScreenView: View {
                             .font(.headline)
                             .foregroundStyle(.secondary)
                         if network.streamErrorReason == "screen_recording_permission" {
-                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable AirBridge, then relaunch AirBridge.")
+                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable Wield Host, then relaunch Wield Host.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
                                 .multilineTextAlignment(.center)
@@ -149,8 +162,10 @@ struct LiveScreenView: View {
             // affordance (and a direct way back) so the controls are never a
             // secret. Tapping anywhere on the picture also brings them back.
             if !chromeVisible {
+                // Only the pill itself is tappable — a full-frame container
+                // here could swallow touches meant for the trackpad below it.
                 VStack {
-                    Spacer()
+                    Spacer().allowsHitTesting(false)
                     Button {
                         revealChrome()
                     } label: {
@@ -224,6 +239,9 @@ struct LiveScreenView: View {
             VStack {
                 HStack {
                     HStack(spacing: 8) {
+                        // Mode is shown too: when input "does nothing", the
+                        // first question is always which mode is actually live.
+                        Text(controlMode.rawValue.uppercased()).bold()
                         Image(systemName: "cursorarrow.motionlines"); Text("Moves: \(network.debugMouseMoveCount)")
                         Image(systemName: "arrow.up.and.down.and.arrow.left.and.right"); Text("Scrolls: \(network.debugScrollCount)")
                         Image(systemName: "cursorarrow.click"); Text("Clicks: \(network.debugClickCount)")
@@ -292,6 +310,19 @@ struct LiveScreenView: View {
         .onChange(of: network.debugClickCount) { _, _ in showDebugAndAutoHide(); revealChrome() }
         .onChange(of: isFullscreen) { _, _ in revealChrome() }
         .onChange(of: controlMode) { _, _ in revealChrome() }
+    }
+
+    /// The streamed picture, carrying whatever zoom/pan View mode set.
+    private func liveImage(_ img: UIImage) -> some View {
+        Image(uiImage: img)
+            .resizable()
+            .aspectRatio(contentMode: fitMode == .fit ? .fit : .fill)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .scaleEffect(zoom)
+            .offset(offset)
+            .animation(.snappy(duration: 0.15), value: zoom)
+            .animation(.snappy(duration: 0.15), value: offset)
     }
 
     // MARK: - Control bar (persistent, labeled)
@@ -528,21 +559,37 @@ struct LiveScreenView: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// Keeps a pan within the picture's own bounds. Without this the image
+    /// could be dragged entirely off-screen and STAY there, because the pan now
+    /// persists across modes: the screen looked blank (no picture, no
+    /// placeholder), the pointer still worked because it sends relative deltas,
+    /// and Touch went dead because every tap mapped outside the image. At 1x
+    /// there is nothing to pan, so the offset is pinned to zero.
+    private func clamped(_ proposed: CGSize) -> CGSize {
+        guard containerSize.width > 0, containerSize.height > 0 else { return .zero }
+        let maxX = max(0, (containerSize.width * zoom - containerSize.width) / 2)
+        let maxY = max(0, (containerSize.height * zoom - containerSize.height) / 2)
+        return CGSize(width: min(max(proposed.width, -maxX), maxX),
+                      height: min(max(proposed.height, -maxY), maxY))
+    }
+
     // MARK: - Gestures (view mode)
     private func viewGestures() -> some Gesture {
         let mag = MagnificationGesture()
             .onChanged { value in
-                zoom = (lastZoom * value).clamped(to: 0.5...4.0)
+                zoom = (lastZoom * value).clamped(to: 1.0...4.0)
+                offset = clamped(offset)
                 revealChrome()
             }
             .onEnded { _ in
                 lastZoom = zoom
+                lastOffset = offset
             }
 
         let drag = DragGesture()
             .onChanged { value in
-                offset = CGSize(width: lastOffset.width + value.translation.width,
-                                 height: lastOffset.height + value.translation.height)
+                offset = clamped(CGSize(width: lastOffset.width + value.translation.width,
+                                        height: lastOffset.height + value.translation.height))
                 revealChrome()
             }
             .onEnded { _ in
@@ -554,6 +601,7 @@ struct LiveScreenView: View {
                 withAnimation(.snappy) {
                     if abs(zoom - 1.0) < 0.01 {
                         zoom = 2.0; lastZoom = 2.0
+                        offset = clamped(offset); lastOffset = offset
                     } else {
                         zoom = 1.0; lastZoom = 1.0; offset = .zero; lastOffset = .zero
                     }

@@ -1,9 +1,9 @@
-# AirPad
+# Wield
 
 **Turn your iPhone into the ultimate controller for your Mac.**
 
-AirPad is a native iOS app that pairs with the free
-[AirBridge](https://github.com/shawn8989/AirBridge-mac) companion on macOS to
+Wield is a native iOS app that pairs with the free
+[Wield Host](https://github.com/shawn8989/AirBridge-mac) companion on macOS to
 provide a trackpad, keyboard, motion pointer, and camera-gesture controller —
 all encrypted, all on your own Wi-Fi, with nothing ever leaving your network.
 
@@ -29,7 +29,7 @@ all encrypted, all on your own Wi-Fi, with nothing ever leaving your network.
 
 - **Free forever:** trackpad, keyboard, and one Mac.
 - **7-day trial:** everything unlocked while you decide.
-- **AirPad Pro (one-time purchase):** Air Mouse, Hand Mouse, Gesture Studio,
+- **Wield Pro (one-time purchase):** Air Mouse, Hand Mouse, Gesture Studio,
   Media/Presentation, Dictation, Live Screen, Apps, multi-Mac.
   No ads. No subscription.
 
@@ -53,7 +53,7 @@ all encrypted, all on your own Wi-Fi, with nothing ever leaving your network.
    on a device (camera/gyro features need real hardware).
 3. For purchase testing, select `AirPad.storekit` under
    Scheme → Run → Options → StoreKit Configuration.
-4. The Mac needs [AirBridge](https://github.com/shawn8989/AirBridge-mac)
+4. The Mac needs [Wield Host](https://github.com/shawn8989/AirBridge-mac)
    running on the same Wi-Fi.
 
 CI compiles the app on every push (`.github/workflows/build.yml`).

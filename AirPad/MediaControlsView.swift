@@ -10,6 +10,7 @@ struct MediaControlsView: View {
     @State private var clipboardStatus: String?
     @State private var volumeSlider: Double = 50
     @State private var draggingVolume = false
+    @AppStorage("mediaSeekPresses") private var seekPresses: Int = 2
 
     var body: some View {
         List {
@@ -55,7 +56,14 @@ struct MediaControlsView: View {
                 }
             }
             Section {
-                if network.audioOutputs.isEmpty {
+                if !network.bridgeSupports(BridgeFeature.audioDevices) {
+                    // Older Mac app: say so plainly instead of showing a
+                    // control that silently does nothing.
+                    Label("Needs a newer Wield Host on the Mac — update it there (Check for Updates) to switch speakers from here.",
+                          systemImage: "arrow.up.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if network.audioOutputs.isEmpty {
                     HStack {
                         ProgressView()
                         Text("Asking the Mac for its speakers…")
@@ -101,6 +109,23 @@ struct MediaControlsView: View {
                     mediaButton("playpause.fill", "Play/Pause", "play_pause")
                     mediaButton("forward.fill", "Next", "next")
                 }
+            }
+
+            Section {
+                HStack(spacing: 12) {
+                    seekButton("gobackward", "Rewind", keyCode: 123)   // ←
+                    seekButton("goforward", "Forward", keyCode: 124)   // →
+                }
+                Picker("Skip size", selection: $seekPresses) {
+                    Text("Small").tag(1)
+                    Text("Medium").tag(2)
+                    Text("Large").tag(4)
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Scrub Video")
+            } footer: {
+                Text("Sends the arrow keys the video app itself uses to seek, repeated for bigger jumps. How far one press moves depends on the player — about 5 seconds in YouTube, 10 in most others — so pick the size that matches what you're watching. Click the video first so it has keyboard focus.")
             }
             Section("Display") {
                 HStack(spacing: 12) {
@@ -201,6 +226,33 @@ struct MediaControlsView: View {
         if n.contains("homepod") { return "homepod.fill" }
         if n.contains("macbook") || n.contains("built-in") { return "laptopcomputer" }
         return "hifispeaker.fill"
+    }
+
+    /// Seeks by pressing the player's own arrow key `seekPresses` times.
+    /// There is no system-wide "skip 10 seconds" on macOS — media keys only
+    /// change track — so the arrow keys every video app already honours are the
+    /// reliable route, with the repeat count standing in for a fixed interval.
+    private func seekButton(_ icon: String, _ title: String, keyCode: UInt16) -> some View {
+        Button {
+            for i in 0..<max(1, seekPresses) {
+                let delay = Double(i) * 0.06   // players drop keys sent too fast
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    NetworkManager.shared.sendKeyDown(keyCode: keyCode)
+                    NetworkManager.shared.sendKeyUp(keyCode: keyCode)
+                }
+            }
+            if hapticsEnabled { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title2)
+                Text(title)
+                    .font(.caption)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.bordered)
     }
 
     private func keyButton(_ icon: String, _ title: String, keyCode: UInt16) -> some View {
