@@ -250,7 +250,7 @@ final class NetworkManager: ObservableObject {
     // Helper: derive per-session key from shared secret and salt using HKDF-SHA256
     private func deriveSessionKey(sharedSecret: Data, salt: Data) -> Data {
         let ikm = SymmetricKey(data: sharedSecret)
-        let info = Data("AirPad-Session-HMAC".utf8)
+        let info = Data("Wield-Session-HMAC".utf8)
         let outKey = HKDF<SHA256>.deriveKey(inputKeyMaterial: ikm, salt: salt, info: info, outputByteCount: 32)
         var keyData = Data()
         outKey.withUnsafeBytes { keyData.append(contentsOf: $0) }
@@ -457,10 +457,10 @@ final class NetworkManager: ObservableObject {
               let macName = obj["macName"] as? String,
               let secretB64 = obj["qrSecret"] as? String,
               let secret = Data(base64Encoded: secretB64) else {
-            return "That doesn't look like an AirBridge pairing code."
+            return "That doesn't look like an Wield Host pairing code."
         }
         guard let service = discoveredServices.first(where: { $0.name == macName }) else {
-            return "Found the code for “\(macName)”, but that Mac isn't visible on this network. Make sure AirBridge is running and both devices share the same Wi-Fi."
+            return "Found the code for “\(macName)”, but that Mac isn't visible on this network. Make sure Wield Host is running and both devices share the same Wi-Fi."
         }
         queue.async { [weak self] in
             self?.pendingQRPairing = (macID, macName, secret)
@@ -470,11 +470,11 @@ final class NetworkManager: ObservableObject {
     }
 
     /// Same derivation as AirBridge: HKDF-SHA256(qrSecret, salt: deviceID,
-    /// info: "AirPad-QR-Pair", 32 bytes).
+    /// info: "Wield-QR-Pair", 32 bytes).
     private func deriveQRPairSecret(qrSecret: Data, deviceID: String) -> Data {
         let key = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: qrSecret),
                                          salt: Data(deviceID.utf8),
-                                         info: Data("AirPad-QR-Pair".utf8),
+                                         info: Data("Wield-QR-Pair".utf8),
                                          outputByteCount: 32)
         var out = Data()
         key.withUnsafeBytes { out.append(contentsOf: $0) }

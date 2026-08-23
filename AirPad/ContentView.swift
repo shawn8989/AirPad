@@ -62,7 +62,7 @@ struct ContentView: View {
                     ConnectionView()
                 }
             }
-            .navigationTitle(network.isConnected ? (network.currentMacName ?? "AirPad") : "AirPad")
+            .navigationTitle(network.isConnected ? (network.currentMacName ?? "Wield") : "Wield")
             .sheet(isPresented: $showMultiMacPaywall) {
                 NavigationStack { PaywallView() }
             }
@@ -173,7 +173,7 @@ struct ConnectionView: View {
                             .symbolEffect(.variableColor.iterative, options: .repeating, isActive: true)
                         Text("Searching for Macs…")
                             .font(.headline)
-                        Text("Open AirBridge on your Mac and make sure both devices are on the same Wi-Fi network.")
+                        Text("Open Wield Host on your Mac and make sure both devices are on the same Wi-Fi network.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -272,7 +272,7 @@ struct ConnectionView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. AirBridge listens on port \(String(NetworkManager.defaultPort)).")
+            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. Wield Host listens on port \(String(NetworkManager.defaultPort)).")
         }
         .alert("Wake packet sent", isPresented: .init(
             get: { wokeMacName != nil },
@@ -318,13 +318,13 @@ struct MainControlView: View {
                     Image(systemName: "arrow.up.circle.fill")
                         .foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("AirBridge on your Mac is out of date")
+                        Text("Wield Host on your Mac is out of date")
                             .font(.footnote.weight(.semibold))
                         Text(missingSummary)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("Update it from AirBridge's menu: Check for Updates.")
+                        Text("Update it from Wield Host's menu: Check for Updates.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -544,13 +544,13 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Section("AirPad Pro") {
+            Section("Wield Pro") {
                 if ProStore.shared.purchased {
                     Label("Pro unlocked — thank you!", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Color.accentColor)
                 } else {
                     NavigationLink(destination: PaywallView()) {
-                        Label("Unlock AirPad Pro", systemImage: "wand.and.stars")
+                        Label("Unlock Wield Pro", systemImage: "wand.and.stars")
                     }
                     Button {
                         Task { await ProStore.shared.restore() }
@@ -571,9 +571,9 @@ struct SettingsView: View {
                         UIApplication.shared.open(url)
                     }
                 } label: {
-                    Label("Rate AirPad", systemImage: "star")
+                    Label("Rate Wield", systemImage: "star")
                 }
-                Text("AirPad turns your iPhone into a trackpad, keyboard, motion pointer, and camera-gesture controller for your Mac. Everything runs on your local network — nothing is collected or sent anywhere else.")
+                Text("Wield turns your iPhone into a trackpad, keyboard, motion pointer, and camera-gesture controller for your Mac. Everything runs on your local network — nothing is collected or sent anywhere else.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

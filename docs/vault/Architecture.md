@@ -5,7 +5,7 @@ tags: [architecture]
 # Architecture
 
 ```
-iPhone (AirPad)                          Mac (AirBridge)
+iPhone (Wield)                          Mac (Wield Host)
   UI (SwiftUI)                             AppState / UI
   NetworkManager  ── TLS + HMAC ──────▶    NetworkManager
   HandEngine                               EventInjector  → CGEvents

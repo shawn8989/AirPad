@@ -98,7 +98,7 @@ struct LiveScreenView: View {
                             .font(.headline)
                             .foregroundStyle(.secondary)
                         if network.streamErrorReason == "screen_recording_permission" {
-                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable AirBridge, then relaunch AirBridge.")
+                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable Wield Host, then relaunch Wield Host.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
                                 .multilineTextAlignment(.center)

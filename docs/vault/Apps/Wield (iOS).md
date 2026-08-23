@@ -2,7 +2,7 @@
 tags: [app, ios]
 ---
 
-# AirPad (iOS)
+# Wield (iOS)
 
 The phone app. SwiftUI, iOS 17+, bundle `com.SOTechy.AirPad`.
 

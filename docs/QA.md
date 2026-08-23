@@ -1,7 +1,7 @@
-# AirPad / AirBridge — Release-Candidate QA Script
+# Wield / Wield Host — Release-Candidate QA Script
 
 One pass ≈ 30 minutes. Run before every release with a Release build of
-AirPad on a real iPhone and the exported AirBridge.app on the Mac.
+Wield on a real iPhone and the exported AirBridge.app on the Mac.
 Check each box; anything that fails blocks the release.
 
 **Setup:** Mac with ≥2 desktops (Mission Control → +), Safari open with a few
@@ -9,18 +9,18 @@ tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
 ## 1. Pairing & connection (5 min)
 
-- [ ] Fresh state: AirBridge → Devices → Forget the phone (and phone: Forget).
-- [ ] **Dialog pairing:** connect from AirPad → approval dialog appears on the
+- [ ] Fresh state: Wield Host → Devices → Forget the phone (and phone: Forget).
+- [ ] **Dialog pairing:** connect from Wield → approval dialog appears on the
       Mac → Allow → connected; phone shows the Mac's name in the title.
-- [ ] Forget again. **QR pairing:** AirBridge → Show Pairing QR → AirPad →
+- [ ] Forget again. **QR pairing:** Wield Host → Show Pairing QR → Wield →
       Scan QR → connects with NO dialog.
 - [ ] QR is one-time: showing a QR and closing it, then scanning an old
       photo/expired code fails gracefully.
-- [ ] AirBridge Devices tab shows the phone **by name**; rename it → name
+- [ ] Wield Host Devices tab shows the phone **by name**; rename it → name
       sticks after disconnect/reconnect.
-- [ ] **Heartbeat:** quit AirBridge → phone shows connection lost/searching
-      within ~20s; relaunch AirBridge → phone auto-reconnects.
-- [ ] **Notifications:** background AirBridge (another app frontmost),
+- [ ] **Heartbeat:** quit Wield Host → phone shows connection lost/searching
+      within ~20s; relaunch Wield Host → phone auto-reconnects.
+- [ ] **Notifications:** background Wield Host (another app frontmost),
       disconnect/reconnect phone → macOS notifications appear.
 
 ## 2. Trackpad (4 min)
@@ -94,12 +94,12 @@ Pose latch & calibration:
 - [ ] Voice typing: open the keyboard, tap the mic key, dictate a full
       paragraph — the text lands on the Mac when dictation ends (no cutoff).
 - [ ] Lock Mac Screen asks to confirm, then locks.
-- [ ] AirBridge Activity tab logged the clipboard transfers.
+- [ ] Wield Host Activity tab logged the clipboard transfers.
 
 ## 5b. Live Screen, Touch mode & keyboard (5 min)
 
 - [ ] Live Screen streams; pointer mode controls; quality slider works.
-- [ ] **Stream recovery:** quit & relaunch AirBridge while watching → frames
+- [ ] **Stream recovery:** quit & relaunch Wield Host while watching → frames
       resume by themselves within a few seconds of reconnect (no manual Start).
 - [ ] Revoke Screen Recording permission → phone shows the how-to-fix message
       instead of a blank "no frames" screen.
@@ -148,7 +148,7 @@ Pose latch & calibration:
       regardless.
 - [ ] Second-Mac switch gated when free (if 2 Macs available).
 
-## 7. AirBridge dashboard (3 min)
+## 7. Wield Host dashboard (3 min)
 
 - [ ] Status: radar animates while advertising; events/sec + sparkline react
       to cursor movement; stops when idle.
@@ -179,7 +179,7 @@ Recommended path — mirror FROM the Mac:
 - [ ] TV button in Live Screen opens the setup sheet; "Guide me" shows the tip.
 - [ ] Media page → Mac Sound Output: lists the Mac's speakers with the current
       one checked; tapping another moves the Mac's audio within ~2s and the
-      checkmark follows; AirBridge Activity logs "Audio output → …".
+      checkmark follows; Wield Host Activity logs "Audio output → …".
 
 Phone-side TV Mode (fallback; HDMI adapter or AirPlay if iOS allows the claim):
 
@@ -199,4 +199,4 @@ Phone-side TV Mode (fallback; HDMI adapter or AirPlay if iOS allows the claim):
 ---
 
 **Sign-off:** all boxes checked on iPhone model ______, iOS ______,
-macOS ______, AirPad build ______, AirBridge build ______ — date ______.
+macOS ______, Wield build ______, Wield Host build ______ — date ______.

@@ -240,7 +240,7 @@ struct HandMouseView: View {
                 if adapter.permissionDenied {
                     VStack(spacing: 8) {
                         Image(systemName: "video.slash.fill").font(.largeTitle)
-                        Text("Camera access is off.\nEnable it in Settings > AirPad.")
+                        Text("Camera access is off.\nEnable it in Settings > Wield.")
                             .multilineTextAlignment(.center)
                             .font(.subheadline)
                     }
@@ -393,7 +393,7 @@ struct HandMouseView: View {
                 } footer: {
                     Text(HandCalibration.isCalibrated
                          ? "Poses are tuned to your hand. Re-run this if recognition drifts in different lighting or at a different distance."
-                         : "Two seconds with your hand open teaches AirPad your finger proportions — the single biggest fix if poses feel touchy.")
+                         : "Two seconds with your hand open teaches Wield your finger proportions — the single biggest fix if poses feel touchy.")
                 }
 
                 Section("Gestures") {

@@ -9,7 +9,7 @@ reviewer notes, IAP config, screenshot plan).
 
 ## Order matters
 
-1. **Ship [[AirBridge (macOS)]] first** — signed, notarized, downloadable.
+1. **Ship [[Wield Host (macOS)]] first** — signed, notarized, downloadable.
    Reviewers need it or the app does nothing. Biggest rejection risk.
 2. GitHub Pages live (support + privacy URLs must resolve).
 3. Paid Applications Agreement signed → then create the IAP.
@@ -23,6 +23,6 @@ reviewer notes, IAP config, screenshot plan).
 ## Still open
 
 - [ ] Device testing of the latest hand-mouse and Live Screen work
-- [ ] [[Naming Decision]]
+- [x] [[Naming Decision]] — Wield (Mac app: Wield Host)
 - [ ] Screenshots — Hand Mouse and AirPop need a real device (Simulator has no camera)
 - [ ] Demo video

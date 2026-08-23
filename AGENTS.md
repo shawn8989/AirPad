@@ -1,13 +1,13 @@
-# AGENTS.md — AirPad (iOS)
+# AGENTS.md — Wield (iOS)
 
 Instructions for AI coding agents (Codex, Claude Code, etc.) working in this
 repo. Read this before touching code.
 
 ## What this is
 
-AirPad is an iPhone app that turns the phone into a trackpad, keyboard, live
+Wield is an iPhone app that turns the phone into a trackpad, keyboard, live
 screen, and gesture remote for a Mac. It is useless on its own: it talks to
-**AirBridge**, a companion macOS app in a separate repo
+**Wield Host**, a companion macOS app in a separate repo
 (`shawn8989/AirBridge-mac`). Changes to the wire protocol must be made in both.
 
 - Swift / SwiftUI, iOS 17+, bundle `com.SOTechy.AirPad`
@@ -44,7 +44,7 @@ Each of these was a real, expensive bug. Full context in `docs/vault/Decisions.m
 
 | Invariant | Why |
 |---|---|
-| **One shared non-suppressing `CGEventSource`** for every synthetic event (AirBridge side) | The default source suppresses the user's *physical* input for ~0.25s per event. This once killed the Mac's real keyboard and trackpad, including after quitting. Never create events with a nil source. |
+| **One shared non-suppressing `CGEventSource`** for every synthetic event (Wield Host side) | The default source suppresses the user's *physical* input for ~0.25s per event. This once killed the Mac's real keyboard and trackpad, including after quitting. Never create events with a nil source. |
 | **Gesture/pose thresholds in seconds, never frame counts** | Vision's frame rate sags under load, so frame counts silently change meaning. |
 | **A pose change must not reset the cursor filter** (`HandEngine`) | The knuckle anchor is identical across poses; resetting it is what made the cursor jump. |
 | **Screen capture stays async with a timeout** | A semaphore starved the concurrency pool that capture's own startup needed — no previews, plus an unkillable hang. |

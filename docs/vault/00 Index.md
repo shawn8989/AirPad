@@ -1,13 +1,13 @@
 ---
-tags: [moc, airpad]
+tags: [moc, wield]
 ---
 
-# AirPad — Project Vault
+# Wield — Project Vault
 
 Two apps, one product: an iPhone app that controls a Mac over the local network.
 
-- **[[AirPad (iOS)]]** — the phone app (trackpad, keyboard, gestures, live screen)
-- **[[AirBridge (macOS)]]** — the free companion that runs on the Mac
+- **[[Wield (iOS)]]** — the phone app (trackpad, keyboard, gestures, live screen)
+- **[[Wield Host (macOS)]]** — the free companion that runs on the Mac
 
 ## Start here
 
@@ -25,6 +25,7 @@ Two apps, one product: an iPhone app that controls a Mac over the local network.
 ## Status at a glance
 
 - Code: feature-complete for 1.0, building green in CI on both repos.
+- Name: **Wield** (Mac app: **Wield Host**) — decided.
 - Blocking release: on-device testing, App Store Connect setup, screenshots,
-  AirBridge notarization, and the [[Naming Decision]].
+  Wield Host notarization,.
 - Business: SO Techy. One-time purchase, no subscription, no ads, no accounts.

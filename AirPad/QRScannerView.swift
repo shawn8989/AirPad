@@ -40,7 +40,7 @@ struct QRScannerSheet: View {
                             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                             .padding()
                     } else {
-                        Text("Point at the QR code on your Mac\n(AirBridge → Show Pairing QR)")
+                        Text("Point at the QR code on your Mac\n(Wield Host → Show Pairing QR)")
                             .font(.footnote)
                             .multilineTextAlignment(.center)
                             .padding(12)

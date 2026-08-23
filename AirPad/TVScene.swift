@@ -138,7 +138,7 @@ struct TVScreenView: View {
             Color.black.ignoresSafeArea()
 
             if !proStore.isPro {
-                banner("TV Mode is part of AirPad Pro",
+                banner("TV Mode is part of Wield Pro",
                        detail: "Unlock Pro on your iPhone to put your Mac's screen on the TV.")
             } else if let image = network.liveImage {
                 Image(uiImage: image)
@@ -147,10 +147,10 @@ struct TVScreenView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
             } else if network.isConnected {
-                banner("AirPad — \(network.currentMacName ?? "Mac")",
+                banner("Wield — \(network.currentMacName ?? "Mac")",
                        detail: "Waiting for the picture…")
             } else {
-                banner("AirPad",
+                banner("Wield",
                        detail: "Connect to your Mac on the iPhone to show it here.")
             }
         }

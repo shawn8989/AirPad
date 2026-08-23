@@ -2,7 +2,7 @@
 tags: [app, macos]
 ---
 
-# AirBridge (macOS)
+# Wield Host (macOS)
 
 Free companion, distributed outside the App Store (Developer ID + notarized).
 macOS 13+.

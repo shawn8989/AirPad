@@ -1,32 +1,54 @@
 ---
-tags: [release, branding, open-question]
+tags: [release, branding, decided]
 ---
 
 # Naming Decision
 
-**Status: OPEN.** Nothing else blocks on it until App Store Connect is filled in.
+**Status: DECIDED — the app is `Wield`.** The Mac companion is `Wield Host`.
 
-## The problem with "AirPad"
-Collides with two Apple marks at once — *iPad* (Apple polices `-Pad`) and the
-*Air-* family (AirPlay, AirDrop, AirPods). Name rejections cost a resubmission
-cycle. `AirBridge` has the same issue, though it's lower risk outside the store.
+## Why the old name had to go
 
-## What the research says
-The whole category is descriptive and interchangeable: Remote Mouse (20M+
-users), Remote Trackpad, Tracepad, FullControl, Control, Remote for Mac. So:
-- a distinctive name is a **differentiator**, not a liability;
-- discoverability comes from the **subtitle + keywords**, which Apple indexes —
-  "Mac Remote & Trackpad" carries the search traffic regardless of the name.
+"AirPad" collided with two Apple marks at once: *iPad* (Apple polices `-Pad`)
+and the *Air-* family. Many `Air*` apps coexist fine on the store — AirDroid,
+AirServer, AirParrot — so "Air" alone isn't fatal; it was the **combination**
+with `-Pad` that made a name-change request likely. Not certain, but likely
+enough that the cost of fixing it before submission (an hour) beat the cost of
+fixing it after (a resubmission cycle).
 
-## Shortlist
-| Name | Note |
-|---|---|
-| **Wield** | *Recommended.* Verb, short, ownable, gesture-flavoured, no conflict |
-| **Sleight** | Second choice — "sleight of hand", elegant |
-| Summon / Beckon | Gesture-flavoured, softer |
-| SO Techy Remote | Zero risk, buries the product |
+## Why Wield
 
-Bundle ID (`com.SOTechy.AirPad`) can stay as-is — users never see it and it's
-painful to change after first upload. Only the **display name** matters.
+- **Availability.** The deciding factor. Checked against the App Store: Wield is
+  clear. `Deft` is taken outright, `Conjure` has four apps, `Beckon` is used;
+  `Sleight` appears free and is the fallback.
+- **It's a verb.** The most durable software brands become verbs; starting as
+  one skips a step. "Just wield it."
+- **It means power over a tool held in the hand** — literally the product.
+- **One syllable, unambiguous spelling** from hearing it once. (Sleight fails
+  this: people write "Slight".)
+- **It has range.** It names no mechanism, so it can't become wrong — trackpad,
+  gestures, and later voice all fit.
 
-If renamed, rename the Mac app to match (e.g. "Wield Host").
+**Known costs, accepted:** it's a slightly literary word some non-native English
+speakers won't know, and nobody searches for it — all discovery comes from the
+subtitle and keywords. That's the price of not being the seventh "Remote Mouse".
+
+## Marketing
+
+- Tagline: **Wield your Mac.**
+- Hero: *Your Mac. From across the room.*
+- Subtitle (does the ASO work): *Mac Remote & Trackpad*
+- In-app flavour: the connected state reads *"Wielding <Mac name>"*
+- Icon direction: the cursor arrow held like a tool, or a hand whose extension
+  is the arrow. Single colour, legible at 60px.
+- Launch line: *"I got tired of walking across the house to pause a video."*
+- Umbrella: **Wield, by SO Techy** — alongside SO Techy 3D.
+
+## What did NOT change
+
+Bundle IDs (`com.SOTechy.AirPad`), the IAP product id
+(`com.airpad.pro.lifetime`), repo names, the Bonjour service type
+(`_airbridge._tcp`), Keychain service names, and the Xcode target/module names.
+All invisible to users, and several are permanent or would break existing
+pairings and purchases. Only user-visible text changed.
+
+Related: [[App Store Checklist]], [[Overview]]

@@ -1,6 +1,6 @@
 # Design: direct connection without a shared network (post-1.0)
 
-**Problem.** AirPad finds the Mac with Bonjour over the local network. On hotel,
+**Problem.** Wield finds the Mac with Bonjour over the local network. On hotel,
 café, campus, and airport Wi-Fi that fails — not because of signal, but because
 those networks enable *client isolation*, which deliberately forbids devices on
 the same SSID from addressing each other. Both devices are online; they simply
@@ -24,7 +24,7 @@ means this is a **transport swap, not a redesign**: everything above `sendLine` 
 the receive loop stays identical on both sides.
 
 ```
-   AirPad                                  AirBridge
+   Wield                                  Wield Host
 ┌──────────────┐                        ┌──────────────┐
 │ Protocol     │  same JSON messages    │ Protocol     │
 ├──────────────┤                        ├──────────────┤
@@ -45,14 +45,14 @@ the receive loop stays identical on both sides.
   `NetworkManager`). Do it with the reaper, `bye`, and
   `emergencyReleaseInput()` paths intact.
 
-**AirBridge (macOS)**
+**Wield Host (macOS)**
 - Advertise with `MCNearbyServiceAdvertiser`, service type `airbridge-mp`.
 - Accept invitations only after the same HMAC pairing proof used today — the
   existing `SecurityManager` challenge works unchanged over any transport.
   **Multipeer's built-in encryption is not a substitute for our pairing**;
   without the proof, any nearby device could invite itself in.
 
-**AirPad (iOS)**
+**Wield (iOS)**
 - Browse with `MCNearbyServiceBrowser` **in parallel** with the existing Bonjour
   browser. Show peers found either way in one list, tagged "Nearby" vs the
   network name, so the user never has to know which transport won.

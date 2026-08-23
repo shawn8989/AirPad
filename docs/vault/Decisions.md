@@ -38,6 +38,6 @@ A semaphore around screen capture starved the Swift concurrency pool that the
 capture's own startup task needed — no previews, and a hang force-quit couldn't
 kill. All capture is async with a timeout.
 
-## AirBridge is free and outside the App Store
+## Wield Host is free and outside the App Store
 Developer ID + notarized. It must be **published before** the iOS app is
-submitted, or App Review cannot test AirPad at all.
+submitted, or App Review cannot test Wield at all.

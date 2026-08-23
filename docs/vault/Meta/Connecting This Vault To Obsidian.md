@@ -9,7 +9,7 @@ every push from a coding session shows up in your notes after a pull.
 
 ## One-time setup
 
-1. Clone (or pull) the AirPad repo on the Mac.
+1. Clone (or pull) the Wield repo on the Mac.
 2. Obsidian → **Open folder as vault** → choose `AirPad/docs/vault`.
 3. Delete Obsidian's stock `Welcome.md` if it appears.
 4. Open **[[00 Index]]**, then Graph view.

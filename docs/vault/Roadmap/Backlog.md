@@ -11,5 +11,5 @@ Post-1.0, roughly in order of value:
 - Second-display streaming (Live Screen captures the main display only today)
 - Per-app gesture profiles
 - Adaptive stream quality
-- Trackpad extras; AirBridge dashboard / file drop
+- Trackpad extras; Wield Host dashboard / file drop
 - Apple Watch companion; localization; protocol tests
