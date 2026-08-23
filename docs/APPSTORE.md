@@ -40,23 +40,23 @@ single most likely rejection.
 
 ### Name and subtitle
 
-**Name: `Wield`** — decided. Checked against the App Store: no app of that name
-exists, and it carries no Apple-mark collision (unlike the former "AirPad",
-which combined *Air-* and *-Pad*).
+| Field | Value |
+|---|---|
+| **Name** (30 max) | `Wield: Mac Remote & Trackpad` — 28 chars |
+| **Subtitle** (30 max) | `Hand gestures & live screen` — 27 chars |
+| Home-screen name | `Wield` (`CFBundleDisplayName`) |
 
-**Subtitle (30 char max): `Mac Remote & Trackpad`**
+The bare name `Wield` was already reserved in App Store Connect by someone else,
+though no app by that name is published — a dormant reservation blocks only the
+exact string. `Wield: …` keeps the brand as the first word (what users say, and
+what the icon shows) while the descriptor does real work: **the name field is
+Apple's highest-weighted search field**, so "Mac Remote" and "Trackpad" earn
+more there than in keywords.
 
-The subtitle and keywords — not the name — carry search traffic, which is why a
-distinctive name costs nothing here and differentiates from a category full of
-"Remote Mouse" / "Remote Trackpad" / "Remote for Mac".
+Because the name now carries those terms, the subtitle and keywords deliberately
+cover different ground — repeating a word across fields wastes the space.
 
-> **Reserve it first.** Creating the app record is what claims the name. If ASC
-> reports it taken, fall back to `Sleight` (also checked, likely free) and tell
-> the developer before changing anything else.
-
-The Mac companion is **Wield Host**. The bundle IDs stay `com.SOTechy.AirPad`
-and the Mac equivalent — they are never user-visible and are permanent once the
-app record exists.
+Fallback if this is ever refused: `Sleight` (checked, appears free).
 
 ### Promotional text (170 max, editable without review)
 
@@ -109,8 +109,11 @@ Wield needs the free Wield Host companion app running on your Mac (macOS 13 or l
 ### Keywords (100 char max, comma separated, no spaces)
 
 ```
-mac,remote,trackpad,mouse,keyboard,control,touchpad,desktop,screen,gesture,presenter,clicker,wifi
+mouse,keyboard,control,touchpad,desktop,presenter,clicker,wifi,pointer,wireless,spaces,laptop
 ```
+
+No term here repeats the name or subtitle — Apple indexes all three, so a
+duplicate is a wasted slot.
 
 ### URLs
 

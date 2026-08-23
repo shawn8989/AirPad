@@ -4,7 +4,17 @@ tags: [release, branding, decided]
 
 # Naming Decision
 
-**Status: DECIDED — the app is `Wield`.** The Mac companion is `Wield Host`.
+**Status: DECIDED.**
+
+- **Store listing name:** `Wield: Mac Remote & Trackpad`
+- **Home-screen name:** `Wield`
+- **Mac companion:** `Wield Host`
+
+The bare `Wield` turned out to be **reserved in App Store Connect** even though
+no app by that name is published — reservations block the exact string only.
+Adding the descriptor kept the brand and, as it happens, improved the listing:
+the name field is Apple's highest-weighted search field, so "Mac Remote" and
+"Trackpad" work harder there than in the keywords.
 
 ## Why the old name had to go
 
