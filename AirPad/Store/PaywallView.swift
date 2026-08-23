@@ -64,8 +64,15 @@ struct PaywallView: View {
                             Label("Unlocked — thank you!", systemImage: "checkmark.seal.fill")
                         } else if busy {
                             ProgressView()
+                        } else if let price = store.product?.displayPrice {
+                            // Never invent a price. StoreKit is the only source
+                            // of truth for it — a hardcoded fallback shows the
+                            // wrong number whenever the product fails to load,
+                            // which is both a review risk and a lie.
+                            Text("Unlock Pro — \(price)")
+                                .fontWeight(.semibold)
                         } else {
-                            Text("Unlock Pro — \(store.product?.displayPrice ?? "$7.99")")
+                            Text("Loading price…")
                                 .fontWeight(.semibold)
                         }
                     }
@@ -73,7 +80,7 @@ struct PaywallView: View {
                     .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(busy || store.purchased)
+                .disabled(busy || store.purchased || store.product == nil)
                 .padding(.horizontal)
 
                 Button("Restore Purchase") {
