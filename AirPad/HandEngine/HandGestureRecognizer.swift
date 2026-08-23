@@ -154,24 +154,41 @@ final class HandGestureRecognizer {
             return
         }
 
-        // Custom templates (Gesture Studio) take precedence over built-in
-        // gestures: while a recorded pose matches strongly, suppress everything
-        // else so the two systems can't fight.
-        if matchCustomTemplates(hand) { return }
+        // Custom templates (Gesture Studio) take precedence over the built-in
+        // *pose* gestures so the two systems can't fight. They must NOT
+        // suppress the cursor or the click: doing that made the hand go
+        // completely dead for as long as it happened to resemble a recorded
+        // shape, with no feedback explaining why.
+        let customActive = matchCustomTemplates(hand)
 
-        let amounts = fingerAmounts(hand, wrist: wrist, scale: scale)
-        updateLatch(with: amounts)
-
-        // Pinch is tracked independently of the latched pose. Tying it to
-        // `pointer` meant a mis-latched pose made clicking impossible; it stays
-        // off only in poses where the thumb and index are curled together
-        // anyway (fist) or deliberately apart (thumbs-up, shaka), where a
-        // "pinch" reading would be an artifact rather than an intention.
+        // Pinch is read before the latch and independently of it. It is a
+        // thumb-to-index measurement, meaningful in any pose that isn't
+        // deliberately holding those two apart, and it deliberately runs while
+        // the latch is still `.none` so a click lands even before the first
+        // pose has settled.
         switch currentPose {
-        case .pointer, .palm, .scroll:
+        case .pointer, .palm, .scroll, .none:
             trackPinch(hand, scale: scale)
-        default:
+        case .fist, .thumbsUp, .shaka:
             releasePinch()
+        }
+
+        // An open pinch freezes the latch. Closing thumb to index necessarily
+        // curls the index finger, which scores as a *different* pose — that is
+        // what knocked the latch out of `.pointer` mid-click and swallowed the
+        // click. Quick taps suffered worst, having the least time to recover.
+        if !pinchActive && !customActive {
+            let amounts = fingerAmounts(hand, wrist: wrist, scale: scale)
+            updateLatch(with: amounts)
+        }
+
+        // Sampled every frame, whatever the pose, so a fast wrist flick that is
+        // already moving before `.palm` latches still counts as travel.
+        trackHandTravel(hand)
+
+        if customActive {
+            trackMovement(hand)   // never let a recorded gesture kill the cursor
+            return
         }
 
         switch currentPose {
@@ -184,7 +201,7 @@ final class HandGestureRecognizer {
                 self.onEvent?(.fistDragBegan)
             }
         case .palm:
-            trackPalm(hand)
+            firePalmGestures()
         case .scroll:
             trackScroll(hand)
         case .thumbsUp:
@@ -446,9 +463,13 @@ final class HandGestureRecognizer {
         poseEnterTime = now
         holdFired = false
         oneShotFired = false
-        lastPalmX = nil
-        palmTravel = 0
-        palmStillSince = now
+        // Keep the travel banked while *entering* palm — it was accumulated
+        // during the candidate phase and is the flick the user just made.
+        // Clearing it here is what made wrist flicks stop switching desktops.
+        if pose != .palm {
+            palmTravel = 0
+            palmStillSince = now
+        }
         // Deliberately NOT cursor.reset(): the knuckle anchor is the same in
         // every pose, so the filter history is still valid. Dropping it here is
         // what used to make the cursor jump after each switch. A short freeze
@@ -526,22 +547,44 @@ final class HandGestureRecognizer {
         }
     }
 
-    private func trackPalm(_ hand: VNHumanHandPoseObservation) {
-        // A pinch held in an open hand is a click, not a swipe — don't let the
-        // travel it causes fire a desktop switch too.
-        guard !pinchActive, let a = anchor(hand) else { return }
+    /// Accumulates sideways hand travel every frame, whatever pose is latched.
+    ///
+    /// A wrist flick is fast, and the latch is deliberately slow — by the time
+    /// `.palm` commits, most of the flick has already happened. Measuring travel
+    /// only while `.palm` is latched (and zeroing it on commit) threw that
+    /// motion away, so the swipe could never reach threshold and desktop
+    /// switching silently stopped working.
+    ///
+    /// Travel accrues only while palm is the current *or* candidate pose, so
+    /// ordinary pointing motion can't bank distance and fire a swipe the
+    /// instant you open your hand.
+    private func trackHandTravel(_ hand: VNHumanHandPoseObservation) {
+        guard let a = anchor(hand) else { return }
         let x = screenPoint(a).x
         let now = CACurrentMediaTime()
         defer { lastPalmX = x }
-        guard let last = lastPalmX else {
+
+        // A pinch held in an open hand is a click, not a swipe.
+        let palmRelevant = !pinchActive && (currentPose == .palm || candidatePose == .palm)
+        guard palmRelevant, let last = lastPalmX else {
+            if !palmRelevant { palmTravel = 0 }
             palmStillSince = now
             return
         }
+
         let delta = x - last
         if palmTravel.sign != delta.sign { palmTravel = 0 }
         palmTravel += delta
-        if abs(delta) > 0.004 { palmStillSince = now }
+        if abs(delta) > 0.004 {
+            palmStillSince = now
+        } else if now - palmStillSince > 0.35 {
+            // Held still: whatever was accumulated was not part of a flick.
+            palmTravel = 0
+        }
+    }
 
+    private func firePalmGestures() {
+        let now = CACurrentMediaTime()
         if config.palmSwipeEnabled, abs(palmTravel) > 0.22, now - lastGestureTime > 1.0 {
             lastGestureTime = now
             let right = palmTravel > 0
