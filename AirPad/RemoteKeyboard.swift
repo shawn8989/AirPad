@@ -119,13 +119,25 @@ struct RemoteKeyboardInput: UIViewRepresentable {
         weak var remoteState: RemoteKeyboardState?
         var onDismissed: (() -> Void)?
 
-        // The field always holds this sentinel. Typing grows the text past it,
-        // backspace shrinks it below it — the editingChanged diff below turns
-        // both into remote key events. This is the ONLY reliable capture: on
-        // real devices the system keyboard inserts text through UITextField's
-        // internal editing path, and a subclass insertText override is simply
-        // never called (delete worked, letters didn't — that was why).
+        // The field holds a zero-width sentinel followed by everything entered
+        // since the keyboard came up. We never take that text back mid-session:
+        // each editingChanged is diffed against what we last sent, and only the
+        // difference is forwarded to the Mac.
+        //
+        // The previous design reset the field to the sentinel after every
+        // change. That works for plain typing and is fatal for anything that
+        // revises its own text — dictation rewrites words as recognition
+        // refines, and autocorrect rewrites the word you just finished. Yanking
+        // the text away mid-session killed dictation after a single character.
+        //
+        // This is also the ONLY reliable capture point: on real devices the
+        // system keyboard inserts through UITextField's internal editing path,
+        // and a subclass insertText override is simply never called.
         private let sentinel = "\u{200B}"
+
+        /// Everything already forwarded to the Mac this session (excluding the
+        /// sentinel). The diff base.
+        private var sent = ""
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -138,85 +150,65 @@ struct RemoteKeyboardInput: UIViewRepresentable {
 
         func resetSentinel() {
             text = sentinel
+            sent = ""
         }
 
-        // iOS dictation continuously EDITS the text it inserted (rewriting
-        // words as recognition refines). Resetting the sentinel mid-dictation
-        // yanks that text away and kills the session after a few words — so
-        // while dictating we let text accumulate untouched and flush it as one
-        // type_text when dictation ends.
-        private var wasDictating = false
-        private var isDictating: Bool {
-            textInputMode?.primaryLanguage == "dictation"
-        }
+        /// Backspaces are cheap individually but a runaway diff should not be
+        /// able to hammer the Mac. Anything larger is treated as a session
+        /// restart instead.
+        private static let maxBackspaces = 64
 
         @objc private func editingChanged() {
-            if isDictating {
-                wasDictating = true
-                scheduleDictationFlush()
-                return  // hands off: dictation owns the text until it ends
+            // Restore the sentinel if a select-all + delete removed it, so the
+            // field never reaches a state where backspace stops registering.
+            var current = text ?? ""
+            if !current.hasPrefix(sentinel) {
+                current = sentinel + current
+                text = current
             }
-            if wasDictating {
-                wasDictating = false
-                flushDictationText()
+            let typed = String(current.dropFirst(sentinel.count))
+            guard typed != sent else { return }
+
+            // Longest common prefix. Everything after it on the old side has to
+            // be deleted on the Mac; everything after it on the new side typed.
+            // Dictation and autocorrect both revise trailing words in place,
+            // which is exactly this shape.
+            let common = typed.commonPrefix(with: sent)
+            let toDelete = sent.count - common.count
+            let toType = String(typed.dropFirst(common.count))
+
+            if toDelete > Self.maxBackspaces {
+                // Too far out of sync to reconcile keystroke by keystroke.
+                // Send nothing destructive; just resync and carry on.
+                sent = typed
                 return
             }
-            let current = text ?? ""
-            defer {
-                if current != sentinel { text = sentinel }
-            }
-            if current.isEmpty {
-                remoteState?.sendKey(51)  // backspace consumed the sentinel
-            } else if current.hasPrefix(sentinel), current.count > sentinel.count {
-                forward(String(current.dropFirst(sentinel.count)))
-            } else if current != sentinel {
-                // Unexpected shape (cursor moved, autofill...): strip and forward.
-                let typed = current.replacingOccurrences(of: sentinel, with: "")
-                if !typed.isEmpty { forward(typed) }
-            }
+            for _ in 0..<toDelete { remoteState?.sendKey(51) }  // Backspace
+            if !toType.isEmpty { forward(toType) }
+            sent = typed
         }
 
-        private func flushDictationText() {
-            let dictated = (text ?? "").replacingOccurrences(of: sentinel, with: "")
-            if !dictated.isEmpty {
-                NetworkManager.shared.sendTypeText(dictated)
-            }
-            resetSentinel()
-        }
-
-        // Dictation end detection WITHOUT the UIResponder dictation hooks.
-        // Overriding insertDictationResult / dictationRecordingDidEnd and
-        // calling super crashed the app the moment the mic key was tapped:
-        // those callbacks land while UIKit is mid-insertion, and our text
-        // mutation inside them tore the dictation session's own state apart.
-        // Instead we watch the text settle: once it stops changing for a
-        // moment and dictation is no longer the active input mode, we flush.
-        private var dictationFlushWork: DispatchWorkItem?
-
-        private func scheduleDictationFlush() {
-            dictationFlushWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                // Still in dictation mode (mic open, pausing between phrases)?
-                // Check again shortly instead of cutting the session short.
-                guard !self.isDictating else {
-                    self.scheduleDictationFlush()
-                    return
-                }
-                self.wasDictating = false
-                self.flushDictationText()
-            }
-            dictationFlushWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
-        }
+        // Dictation needs no special case any more, and deliberately has none.
+        //
+        // It used to be detected with `textInputMode?.primaryLanguage ==
+        // "dictation"`, which on current iOS is essentially never true —
+        // inline dictation leaves the input mode on the normal language. So
+        // the dictation branch never ran, dictation fell through the ordinary
+        // typing path, and the field reset after the first change tore the
+        // session down. That is why exactly one letter arrived.
+        //
+        // The diff above handles it without knowing dictation exists: text
+        // appears, gets forwarded; text is revised, the revision is sent as
+        // backspaces plus the replacement. Words now land on the Mac as you
+        // speak instead of in one lump at the end.
+        //
+        // Note also that the UIResponder dictation hooks
+        // (insertDictationResult / dictationRecordingDidEnd) must stay
+        // unimplemented: they land while UIKit is mid-insertion, and mutating
+        // text inside them crashed the app the moment the mic key was tapped.
 
         override func resignFirstResponder() -> Bool {
-            // Dismissing the keyboard mid-dictation must not swallow the text.
-            dictationFlushWork?.cancel()
-            if wasDictating {
-                wasDictating = false
-                flushDictationText()
-            }
+            sent = ""
             return super.resignFirstResponder()
         }
 

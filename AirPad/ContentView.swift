@@ -25,7 +25,7 @@ struct ContentView: View {
         NavigationStack {
             Group {
                 if network.isConnected {
-                    MainControlView(showKeyboard: $keyboard.visible)
+                    MainControlView()
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
                                 Menu {
@@ -297,7 +297,6 @@ struct ConnectionView: View {
 // Main control view. iPhone: trackpad on top, quick actions, 4-column tile
 // grid. iPad / regular width: big trackpad beside a control column.
 struct MainControlView: View {
-    @Binding var showKeyboard: Bool
     @ObservedObject private var network = NetworkManager.shared
     @ObservedObject private var proStore = ProStore.shared
     @ObservedObject private var tv = TVSceneManager.shared
@@ -428,14 +427,34 @@ struct MainControlView: View {
             quickButton("Right", "cursorarrow.rays") {
                 NetworkManager.shared.sendClick(button: "right")
             }
-            quickButton("Keys", "keyboard") {
-                showKeyboard = true
-            }
+            // Goes to the full Keyboard screen rather than raising a panel over
+            // this one: typing needs a trackpad and click buttons next to it,
+            // and there is no room for all three here.
+            quickLink("Keys", "keyboard") { KeyboardModeView() }
             quickButton("Desktop", "chevron.right", accessibility: "Next desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             }
         }
+    }
+
+    /// A quick action that navigates instead of firing an event, styled to
+    /// match `quickButton` so the row stays visually even.
+    private func quickLink<D: View>(_ title: String, _ icon: String,
+                                    @ViewBuilder destination: () -> D) -> some View {
+        NavigationLink(destination: destination()) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel(title)
     }
 
     @ViewBuilder
@@ -466,6 +485,7 @@ struct MainControlView: View {
     // Modes & tools. Pro tiles route to the paywall once the trial ends.
     private func tileGrid(columns: Int) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: columns), spacing: 10) {
+            modeTile("Keyboard", "keyboard") { KeyboardModeView() }
             modeTile("Air Mouse", "dot.circle.and.hand.point.up.left.fill", pro: true) { AirMouseView() }
             modeTile("Hand Mouse", "hand.point.up.left", pro: true) { HandMouseView() }
             modeTile("Live Screen", "display", pro: true) { LiveScreenView() }

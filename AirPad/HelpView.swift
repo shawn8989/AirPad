@@ -75,7 +75,9 @@ struct HelpView: View {
                 helpRow("Can't find the Mac? Same Wi-Fi network, Wield Host running, and Local Network permission allowed.")
                 helpRow("On hotel, café, campus, or airport Wi-Fi? Those networks usually block devices from seeing each other, so discovery fails even though both are online. Fix: turn on Personal Hotspot on this iPhone (Settings → Personal Hotspot) and join the Mac to it. You're then on your own private network and everything works normally — including Live Screen.")
                 helpRow("Desktop switching needs more than one desktop (Mission Control > +).")
-                helpRow("Input not working? Check the Mac's Accessibility permission for Wield Host (System Settings > Privacy & Security > Accessibility).")
+                helpRow("Connected, but the cursor moves and nothing else works? Wield Host is almost certainly not in the Mac's Applications folder. Until it is, macOS runs it from a temporary copy and quietly discards the Accessibility permission no matter how many times you grant it. Quit Wield Host, drag it to Applications, and open it from there.")
+                helpRow("Input not working at all? Check the Mac's Accessibility permission for Wield Host (System Settings > Privacy & Security > Accessibility). If old entries are listed, remove them with the minus button and grant it again.")
+                helpRow("Says connected but nothing responds? The two halves of the pairing key no longer match — usually after reinstalling Wield Host or resetting its permissions. It should re-pair itself on the next connection. If it doesn't: click Forget next to this device in Wield Host, then reconnect and approve the prompt.")
                 helpRow("Laggy? Lower Live Screen quality, or reconnect.")
                 helpRow("Pairing errors? Forget Server on the phone, then reconnect and approve again.")
             }
