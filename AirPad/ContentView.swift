@@ -371,11 +371,13 @@ struct MainControlView: View {
                 trackpad
                     .padding([.leading, .vertical])
 
+                // iPad has the room to keep the grid on screen, so it does.
                 VStack(spacing: 12) {
                     TrialBanner()
                     bridgeUpdateChip
                     tvChip
-                    quickActions
+                    primaryActions
+                    secondaryActions
                     tileGrid(columns: 2)
                     Spacer(minLength: 0)
                 }
@@ -383,7 +385,15 @@ struct MainControlView: View {
                 .padding([.trailing, .vertical])
             }
         } else {
-            VStack(spacing: 12) {
+            // The trackpad is the screen. It used to share space with a row of
+            // quick actions AND a nine-tile grid, which left it too small to
+            // use for the thing people do most, and buried the features that
+            // deserve one tap behind a wall of equal-weight tiles.
+            //
+            // Now: pad first and biggest, the three controls that go with
+            // pointing directly under it, and everything else one tap away
+            // under Modes.
+            VStack(spacing: 10) {
                 TrialBanner()
                     .padding(.top, 4)
 
@@ -394,10 +404,10 @@ struct MainControlView: View {
                 trackpad
                     .padding(.horizontal)
 
-                quickActions
+                primaryActions
                     .padding(.horizontal)
 
-                tileGrid(columns: 4)
+                secondaryActions
                     .padding([.horizontal, .bottom])
             }
         }
@@ -414,13 +424,10 @@ struct MainControlView: View {
     /// text into each other on a phone — the icons were clipped and the words
     /// unreadable. Stacking them gives each button a legible fixed height and
     /// lets all five share the width evenly.
-    private var quickActions: some View {
-        HStack(spacing: 6) {
-            // Desktop hop, one tap from the trackpad — no swipe gymnastics.
-            quickButton("Desktop", "chevron.left", accessibility: "Previous desktop") {
-                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            }
+    /// The three things you reach for while your other hand is on the pad.
+    /// Full width and tall enough to hit without looking.
+    private var primaryActions: some View {
+        HStack(spacing: 8) {
             quickButton("Click", "cursorarrow.click", prominent: true) {
                 NetworkManager.shared.sendClick(button: "left")
             }
@@ -429,8 +436,23 @@ struct MainControlView: View {
             }
             // Goes to the full Keyboard screen rather than raising a panel over
             // this one: typing needs a trackpad and click buttons next to it,
-            // and there is no room for all three here.
-            quickLink("Keys", "keyboard") { KeyboardModeView() }
+            // and there is no room for all three here. It is also the manual
+            // way in, which matters while the Mac-side auto-raise is unreliable.
+            quickLink("Keyboard", "keyboard") { KeyboardModeView() }
+        }
+    }
+
+    /// Navigation: which desktop, which window, and everything else.
+    /// "Apps" was previously only reachable from inside Live Screen, and the
+    /// desktop switcher was one tile among nine — both are top-level jobs.
+    private var secondaryActions: some View {
+        HStack(spacing: 8) {
+            quickButton("Desktop", "chevron.left", accessibility: "Previous desktop") {
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+            quickLink("Apps", "square.grid.2x2") { MacSwitcherView() }
+            quickLink("Modes", "ellipsis.circle") { ModesView() }
             quickButton("Desktop", "chevron.right", accessibility: "Next desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
