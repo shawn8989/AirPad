@@ -45,8 +45,20 @@ final class HandTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         cameraQueue.async { [weak self] in
             guard let self else { return }
             if self.session.isRunning { self.session.stopRunning() }
+            // AVCaptureVideoDataOutput retains its delegate STRONGLY, and we own
+            // the output — so tracker -> output -> tracker was a cycle and the
+            // tracker, its capture session, its camera input and its onFrame
+            // closure were never deallocated. Every visit to Hand Mouse, Gesture
+            // Studio, or AirPop leaked a whole capture session, and the leaked
+            // ones went on contending for the front camera.
+            self.output.setSampleBufferDelegate(nil, queue: nil)
             DispatchQueue.main.async { self.onRunning?(false) }
         }
+    }
+
+    deinit {
+        output.setSampleBufferDelegate(nil, queue: nil)
+        if session.isRunning { session.stopRunning() }
     }
 
     private func configureAndRun() {
@@ -70,6 +82,10 @@ final class HandTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
             session.commitConfiguration()
             request.maximumHandCount = 1
         }
+        // Re-arm every time: stop() clears the delegate to break the retain
+        // cycle, and the configuration block above runs only on first setup, so
+        // a stop/start round trip would otherwise deliver no frames at all.
+        output.setSampleBufferDelegate(self, queue: cameraQueue)
         guard !session.isRunning else { return }
         session.startRunning()
         DispatchQueue.main.async { self.onRunning?(true) }
@@ -78,7 +94,15 @@ final class HandTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-        try? handler.perform([request])
+        do {
+            try handler.perform([request])
+        } catch {
+            // `request` is reused across frames, so emitting its results after a
+            // failed perform re-delivered the PREVIOUS frame's observation as if
+            // it were fresh — a phantom hand that kept the pose latched.
+            onFrame?(nil)
+            return
+        }
         onFrame?(request.results?.first)
     }
 }

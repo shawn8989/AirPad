@@ -59,9 +59,18 @@ final class HandMouseAdapter: ObservableObject {
         recognizer.startCalibration(seconds: 2.0)
     }
 
+    /// Main-thread copy of what the UI has configured. The recognizer's own copy
+    /// belongs to the camera queue and is handed over rather than assigned, so
+    /// dragging a slider mid-tracking can't tear a struct the camera queue is
+    /// reading 30 times a second.
+    private var desiredConfig = HandGestureConfig()
+
     var config: HandGestureConfig {
-        get { recognizer.config }
-        set { recognizer.config = newValue }
+        get { desiredConfig }
+        set {
+            desiredConfig = newValue
+            recognizer.updateConfig(newValue)
+        }
     }
 
     func start() { tracker.start() }

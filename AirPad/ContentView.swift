@@ -557,6 +557,7 @@ struct SettingsView: View {
     @AppStorage("naturalScroll") private var naturalScroll: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
     @AppStorage("showTouches") private var showTouches: Bool = true
+    @AppStorage("autoKeyboard") private var autoKeyboard: Bool = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
     var body: some View {
@@ -574,10 +575,11 @@ struct SettingsView: View {
                 Toggle("Haptic Feedback", isOn: $hapticsEnabled)
             }
             Section("Keyboard") {
-                Toggle("Auto keyboard in Live Screen", isOn: Binding(
-                    get: { UserDefaults.standard.object(forKey: "autoKeyboard") as? Bool ?? true },
-                    set: { UserDefaults.standard.set($0, forKey: "autoKeyboard") }
-                ))
+                // @AppStorage, not a raw UserDefaults binding: writing defaults
+                // directly invalidates nothing, so the rendered switch could
+                // disagree with the stored value — and ContentView reads the
+                // same key through @AppStorage, which does observe.
+                Toggle("Auto keyboard", isOn: $autoKeyboard)
                 Text("Pops the keyboard up automatically when you click into a text field on the Mac.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)

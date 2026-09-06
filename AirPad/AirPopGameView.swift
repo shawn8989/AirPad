@@ -127,7 +127,7 @@ final class AirPopEngine: ObservableObject {
         // player's own hand calibration.
         cfg.tuning = .quick
         cfg.calibration = HandCalibration.load()
-        recognizer.config = cfg
+        recognizer.updateConfig(cfg)
         recognizer.onPoseChanged = { [weak self] pose in
             DispatchQueue.main.async {
                 self?.pose = pose

@@ -77,12 +77,39 @@ struct HandGestureConfig {
 }
 
 final class HandGestureRecognizer {
-    var config = HandGestureConfig() {
+    /// Owned by the camera queue. Never assign this from anywhere else — use
+    /// `updateConfig`.
+    ///
+    /// It is a struct holding a Dictionary and a calibration, and it was being
+    /// assigned wholesale from the main thread (nine `onChange` handlers, and
+    /// every tick of the Sensitivity slider) while `process()` read it on the
+    /// camera queue 30 times a second. That is a torn read and a
+    /// copy-on-write refcount race on a live heap buffer.
+    private(set) var config = HandGestureConfig() {
         didSet {
             cursor.sensitivity = config.sensitivity
             cursor.configureSmoothing(minCutoff: config.tuning.minCutoff,
                                       beta: config.tuning.beta)
         }
+    }
+
+    private let configLock = NSLock()
+    private var pendingConfig: HandGestureConfig?
+
+    /// Hands a new configuration to the camera queue. Safe from any thread.
+    func updateConfig(_ newValue: HandGestureConfig) {
+        configLock.lock()
+        pendingConfig = newValue
+        configLock.unlock()
+    }
+
+    /// Applies a configuration handed over since the last frame.
+    private func applyPendingConfig() {
+        configLock.lock()
+        let pending = pendingConfig
+        pendingConfig = nil
+        configLock.unlock()
+        if let pending { config = pending }
     }
     /// Emitted on the tracker's camera queue — hosts hop threads as needed.
     var onEvent: ((HandEvent) -> Void)?
@@ -136,6 +163,7 @@ final class HandGestureRecognizer {
     // MARK: - Input
 
     func process(_ hand: VNHumanHandPoseObservation?) {
+        applyPendingConfig()
         guard let hand else {
             handLost()
             return
@@ -263,16 +291,29 @@ final class HandGestureRecognizer {
             (.indexTip, .indexPIP), (.middleTip, .middlePIP),
             (.ringTip, .ringPIP), (.littleTip, .littlePIP)
         ]
+        // The deadline is checked FIRST, and unconditionally.
+        //
+        // It used to be checked only after every joint had passed a confidence
+        // test, and any low-confidence fingertip returned early. So exactly when
+        // you would reach for calibration — poor light, hand partly out of frame
+        // — the capture never finished, `calibrating` stayed true forever, and
+        // the "Hold your hand open — measuring…" overlay had no way out and no
+        // cancel button. A hand that is *seen* but unclear also never trips
+        // handLost(), which is what cancels calibration.
+        let expired = CACurrentMediaTime() >= calibrationEnds
+
         var sample: [Double] = []
+        var usable = true
         for (tip, pip) in fingers {
-            guard let t = point(hand, tip), let p = point(hand, pip) else { return }
+            guard let t = point(hand, tip), let p = point(hand, pip) else { usable = false; break }
             sample.append(Double(distance(t, wrist) / max(distance(p, wrist), 0.0001)))
         }
-        guard let thumbTip = point(hand, .thumbTip), let idxMCP = point(hand, .indexMCP) else { return }
-        sample.append(Double(distance(thumbTip, idxMCP) / scale))
-        calibrationSamples.append(sample)
+        if usable, let thumbTip = point(hand, .thumbTip), let idxMCP = point(hand, .indexMCP) {
+            sample.append(Double(distance(thumbTip, idxMCP) / scale))
+            calibrationSamples.append(sample)
+        }
 
-        guard CACurrentMediaTime() >= calibrationEnds else { return }
+        guard expired else { return }
         calibrating = false
         // Need a decent number of clean frames or the capture isn't trustworthy.
         guard calibrationSamples.count >= 12 else {
