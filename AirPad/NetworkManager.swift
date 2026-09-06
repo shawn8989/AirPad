@@ -56,6 +56,15 @@ final class NetworkManager: ObservableObject {
     // message). Per-Mac keys are stored under this ID so one AirPad can pair with
     // and switch between multiple Macs.
     var currentMacID: String?
+    /// The Bonjour instance name of the service we are connected to.
+    ///
+    /// Distinct from `currentMacName`, which is the computer name reported in
+    /// `server_info`. The two differ whenever Bonjour de-duplicates a name
+    /// ("MacBook Pro (2)"), and comparing a browser entry against the *reported*
+    /// name therefore classified reconnecting to your own, only Mac as a switch
+    /// to a different one — showing the multi-Mac paywall to someone who owns a
+    /// single Mac.
+    @Published var connectedServiceName: String?
     @Published var currentMacName: String?
     @Published var lastFetchedClipboard: String?
 
@@ -262,6 +271,15 @@ final class NetworkManager: ObservableObject {
         if let sessionKey = self.sessionKey {
             return sessionKey
         }
+        // The per-Mac key first: pairing writes `mac_secret.<macID>` and has not
+        // written the legacy global account for some time, so reading only that
+        // one returned nil and packets went out with no hmac field at all —
+        // silently rejected by a server that requires it.
+        if let macID = self.currentMacID,
+           let perMac = try? self.security.getSharedSecret(forMac: macID),
+           let perMac {
+            return perMac
+        }
         if let secret = try? self.security.getSharedSecret() {
             return secret
         }
@@ -372,8 +390,14 @@ final class NetworkManager: ObservableObject {
         // the old session's ids so stale images never stick to wrong cards.
         DispatchQueue.main.async { self.desktopPreviews = [:] }
 
-        connectingServiceID = service.id
-        lastErrorMessage = nil
+        // connect(to:) is also called from the reconnect timer on `queue`;
+        // touching @Published directly from there fires SwiftUI observation off
+        // the main thread.
+        DispatchQueue.main.async {
+            self.connectingServiceID = service.id
+            self.lastErrorMessage = nil
+            self.connectedServiceName = service.name
+        }
 
         let parameters: NWParameters
         if enableTLS {
@@ -512,6 +536,21 @@ final class NetworkManager: ObservableObject {
         heartbeatTimer = nil
     }
 
+    /// The socket died on its own. Keep `lastService` so auto-reconnect can do
+    /// its job, and do not send `bye` down a dead connection.
+    private func handleConnectionLost(error: NWError?) {
+        stopHeartbeat()
+        connection?.cancel()
+        connection = nil
+        sessionKey = nil
+        DispatchQueue.main.async {
+            self.isConnected = false
+            if let error { self.lastErrorMessage = "Connection lost: \(self.friendlyError(error))" }
+        }
+        log("Connection lost (\(error.map { "\($0)" } ?? "closed by peer")) — will retry")
+        if lastService != nil { scheduleReconnect() }
+    }
+
     func disconnect() {
         stopHeartbeat()
         // Tell the Mac we're leaving so it releases input state and updates
@@ -562,6 +601,13 @@ final class NetworkManager: ObservableObject {
         log("Resetting trust: deleting shared secret and fingerprint, disconnecting.")
         // Best-effort deletes; ignore errors but log
         do { _ = try security.deleteSharedSecret() } catch { log("ResetTrust: deleteSharedSecret error: \(error)") }
+        // The per-Mac keys are the ones that actually authenticate today.
+        // Deleting only the legacy global account left every pairing intact, so
+        // Forget silently did nothing at all.
+        do {
+            let removed = try security.deleteAllMacSecrets()
+            log("ResetTrust: removed \(removed) per-Mac secret(s)")
+        } catch { log("ResetTrust: deleteAllMacSecrets error: \(error)") }
         do { _ = try security.deleteServerCertFingerprint() } catch { log("ResetTrust: deleteServerCertFingerprint error: \(error)") }
 
         // Clear in-memory session state
@@ -649,7 +695,14 @@ final class NetworkManager: ObservableObject {
                 }
             }
             if isComplete || error != nil {
-                self.disconnect()
+                // NOT disconnect(): that is the user-initiated teardown, and it
+                // clears lastService to switch auto-reconnect OFF. Routing every
+                // dropped socket through it meant a Wi-Fi blip, a sleeping Mac,
+                // or the heartbeat firing permanently disabled reconnection --
+                // including the foreground retry, which is gated on the same
+                // field. The user then had to go back to the list and tap the
+                // Mac by hand, which defeats the entire reconnect subsystem.
+                self.handleConnectionLost(error: error)
                 return
             }
             self.receiveLoop()
@@ -1081,10 +1134,27 @@ final class NetworkManager: ObservableObject {
     }
 
     func sendMouseDown(button: String = "left") {
+        heldMouseButtons.insert(button)
         try? send(type: "mouse_down", payload: ["button": button])
     }
 
+    /// Every mouse button we have pressed and not yet released.
+    ///
+    /// A held button is state living on the MAC: if the phone navigates away,
+    /// backgrounds, or disconnects without sending the up, the Mac is left with
+    /// the button down and every cursor move becomes a drag — and there is no
+    /// longer any UI on the phone offering to release it. Tracking it centrally
+    /// means one call can always put things right.
+    private(set) var heldMouseButtons: Set<String> = []
+
+    /// Releases anything still held. Safe to call when nothing is.
+    func releaseHeldInput() {
+        for button in heldMouseButtons { sendMouseUp(button: button) }
+        heldMouseButtons.removeAll()
+    }
+
     func sendMouseUp(button: String = "left") {
+        heldMouseButtons.remove(button)
         try? send(type: "mouse_up", payload: ["button": button])
     }
 

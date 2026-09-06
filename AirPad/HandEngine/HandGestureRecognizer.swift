@@ -147,7 +147,14 @@ final class HandGestureRecognizer {
         }
         lostFrames = 0
         let scale = distance(wrist, midMCP)
-        guard scale > 0.02 else { return }
+        guard scale > 0.02 else {
+            // A hand detected but degenerate (edge-on, or mostly out of frame)
+            // used to return here having already reset lostFrames, so pinch and
+            // drag stayed latched with no path to release — the Mac's button
+            // held down indefinitely. Treat it as a lost hand.
+            handLost()
+            return
+        }
 
         if calibrating {
             collectCalibrationSample(hand, wrist: wrist, scale: scale)
@@ -573,7 +580,11 @@ final class HandGestureRecognizer {
         }
 
         let delta = x - last
-        if palmTravel.sign != delta.sign { palmTravel = 0 }
+        // Compare direction only when there IS a direction: CGFloat(0).sign is
+        // .plus, so an unchanged x — common when Vision reports an identical
+        // position — wiped accumulated LEFTWARD travel while leaving rightward
+        // untouched, making palm-swipe-left asymmetrically unreliable.
+        if delta != 0, palmTravel != 0, palmTravel.sign != delta.sign { palmTravel = 0 }
         palmTravel += delta
         if abs(delta) > 0.004 {
             palmStillSince = now

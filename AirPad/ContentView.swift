@@ -36,14 +36,16 @@ struct ContentView: View {
                                         Button {
                                             // Switching to a DIFFERENT Mac is a Pro feature;
                                             // the first/current Mac is always free.
-                                            let isSwitch = service.name != network.currentMacName
+                                            // Compare like with like: both sides
+                                            // are Bonjour instance names.
+                                            let isSwitch = service.name != (network.connectedServiceName ?? network.currentMacName)
                                             if isSwitch && !proStore.isPro {
                                                 showMultiMacPaywall = true
                                             } else {
                                                 network.connect(to: service)
                                             }
                                         } label: {
-                                            if service.name == network.currentMacName {
+                                            if service.name == (network.connectedServiceName ?? network.currentMacName) {
                                                 Label("\(service.name) (current)", systemImage: "checkmark")
                                             } else {
                                                 Text(service.name)
