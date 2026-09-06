@@ -275,9 +275,10 @@ final class NetworkManager: ObservableObject {
         // written the legacy global account for some time, so reading only that
         // one returned nil and packets went out with no hmac field at all —
         // silently rejected by a server that requires it.
+        // `try?` already flattens the Optional the getter returns, so one
+        // binding is enough — the extra `let perMac` was unwrapping a Data.
         if let macID = self.currentMacID,
-           let perMac = try? self.security.getSharedSecret(forMac: macID),
-           let perMac {
+           let perMac = try? self.security.getSharedSecret(forMac: macID) {
             return perMac
         }
         if let secret = try? self.security.getSharedSecret() {
@@ -886,7 +887,7 @@ final class NetworkManager: ObservableObject {
                 // Server could not verify our secret (typically a stale pairing).
                 // Clear THIS Mac's key so the automatic reconnect re-pairs.
                 self.log("Server requested re-pair; clearing per-Mac secret")
-                if let macID = self.currentMacID { try? self.security.deleteSharedSecret(forMac: macID) }
+                if let macID = self.currentMacID { _ = try? self.security.deleteSharedSecret(forMac: macID) }
                 DispatchQueue.main.async { self.isPairing = true }
 
             case "installed_apps":
