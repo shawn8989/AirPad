@@ -1,0 +1,86 @@
+name: App Store screenshots
+
+# App Store submission requires screenshots, and capturing them normally needs a
+# Mac running Wield Host on the same network as the phone. A CI runner has
+# neither -- so the app is launched with -uiPreview (DEBUG only), which presents
+# the connected interface with placeholder state and no networking.
+#
+# Produces real captures of the real UI at the exact sizes Apple wants. The two
+# camera screens (Hand Mouse, Gesture Studio) are deliberately NOT captured
+# here: the Simulator has no camera, so any image would be a lie.
+#
+# Run it from the Actions tab; the framed PNGs come back as an artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Simulator to capture on
+        default: iPhone 16 Pro Max
+        type: string
+
+jobs:
+  capture:
+    name: Capture and frame
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project AirPad.xcodeproj \
+            -scheme AirPad \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath .build-sim \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty || xcodebuild build \
+            -project AirPad.xcodeproj -scheme AirPad -sdk iphonesimulator \
+            -configuration Debug -derivedDataPath .build-sim CODE_SIGNING_ALLOWED=NO
+
+      - name: Boot the simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available \
+                 | grep -m1 "${{ inputs.device }} (" \
+                 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          if [ -z "$UDID" ]; then
+            echo "No simulator named '${{ inputs.device }}'. Available:"
+            xcrun simctl list devices available | grep iPhone
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          # Apple's own marketing convention, and it keeps a CI runner's
+          # battery percentage out of the store listing.
+          xcrun simctl status_bar "$UDID" override \
+            --time "9:41" --batteryState charged --batteryLevel 100 \
+            --cellularMode active --cellularBars 4 --wifiMode active --wifiBars 3 \
+            --operatorName "" || true
+
+      - name: Install and capture
+        run: |
+          UDID="${{ steps.sim.outputs.udid }}"
+          APP=$(find .build-sim/Build/Products -name "AirPad.app" -maxdepth 3 | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p docs/screenshots/raw
+          # -uiPreview makes the app present the connected UI without a Mac.
+          xcrun simctl launch "$UDID" com.SOTechy.AirPad -uiPreview
+          sleep 8
+          xcrun simctl io "$UDID" screenshot --type=png docs/screenshots/raw/01-trackpad.png
+          echo "Captured the main screen. Deeper screens need UI automation;"
+          echo "this job intentionally captures only what it can do honestly."
+
+      - name: Frame for the App Store
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check pillow
+          python3 scripts/frame-screenshots.py docs/screenshots/raw docs/screenshots/framed
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-store-screenshots
+          path: docs/screenshots/framed
+          if-no-files-found: error

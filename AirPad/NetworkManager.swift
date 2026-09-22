@@ -199,9 +199,32 @@ final class NetworkManager: ObservableObject {
     private let maxInboundClockSkew: Int = 120 // seconds
 
     private init() {
+        #if DEBUG
+        // Screenshot mode. App Store screenshots have to show the CONNECTED
+        // interface, and connecting needs a Mac on the same network — which a
+        // CI runner does not have. With -uiPreview the app presents that
+        // interface with plausible placeholder state and no networking at all,
+        // so captures can be produced without hardware.
+        //
+        // Strictly DEBUG: a Release build cannot reach this, so a shipped app
+        // can never claim to be connected when it is not.
+        if Self.isUIPreview {
+            isConnected = true
+            currentMacName = "Shawn's MacBook Pro"
+            connectedServiceName = "Shawn's MacBook Pro"
+            bridgeFeatures = Set(BridgeFeature.all)
+            bridgeProtocolVersion = kAirBridgeProtocolVersion
+            return   // deliberately no Bonjour browsing
+        }
+        #endif
         // Start Bonjour browsing on init so the UI can immediately show services
         startBrowsing()
     }
+
+    #if DEBUG
+    /// True when launched with -uiPreview (see init).
+    static let isUIPreview = ProcessInfo.processInfo.arguments.contains("-uiPreview")
+    #endif
 
     // Shared formatter: allocating an ISO8601DateFormatter per log line is
     // expensive enough to matter on hot paths.
