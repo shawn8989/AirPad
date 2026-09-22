@@ -5,23 +5,45 @@ Copy/paste the metadata blocks straight into ASC.
 
 ---
 
-## 0. Do these in order
+## 0. Where this stands
 
-App Review **cannot test Wield without a Mac running Wield Host**, so the Mac
-app has to be public before the iOS app is submitted. Out of order, this is the
-single most likely rejection.
+Updated 2026-09-22. Done is done; everything under "Left to do" needs a Mac,
+an Apple ID, or a device, which is why it is still here.
 
-1. **Ship Wield Host first** — Developer ID sign + notarize + staple, publish a
-   GitHub Release, confirm the download link works from a clean machine.
-   (See `RELEASE.md` in the Wield Host repo and `scripts/make-dmg.sh`.)
-2. Enable GitHub Pages on the Wield Host repo (`main` / `docs`) so the privacy
-   policy and support URLs resolve. **ASC rejects unreachable URLs.**
-3. Sign the **Paid Applications Agreement** in ASC → Business. In-app purchases
-   cannot be created, let alone approved, until this is active.
-4. Create the app record + the IAP (below), attach the IAP to the version.
-5. Sandbox-test the purchase and Restore on a real device.
-6. Run `docs/QA.md` end to end on real hardware.
-7. Upload the build, fill in metadata + reviewer notes, submit.
+### Done
+
+- Both repos merged to `main`, CI green on both.
+- Wield Host bumped to **1.0.1** (build 2) — the published 1.0 traps on
+  `CheckedContinuation.resume` when a user approves pairing, so it has to be
+  replaced before a reviewer ever downloads it.
+- Paid Applications Agreement signed.
+- App record created, bundle ID `com.SOTechy.AirPad`, Apple ID 6804338937.
+- IAP created: `com.airpad.pro.lifetime`.
+- GitHub Pages live; support, marketing and privacy URLs all resolve.
+- Every metadata field below validated against Apple's limits — nothing is
+  over, and the IAP description is 53 against a limit of 55.
+- Screenshot pipeline: `.github/workflows/screenshots.yml` captures and frames
+  on a CI runner, no Mac needed. Run it from the Actions tab.
+
+### Left to do, in order
+
+1. **Publish Wield Host 1.0.1.** Archive → Direct Distribution → notarize →
+   export → zip → GitHub release tagged `v1.0.1`. Needs the Developer ID
+   certificate and the `airbridge-notary` notarytool profile. *This gates
+   everything else: the reviewer notes send App Review to that download.*
+2. **Finish the IAP** — Availability (all countries), price (USD 9.99),
+   English (U.S.) localisation, review screenshot — then attach it to version
+   1.0. The banner in ASC about a first non-consumable shipping with a version
+   is telling you it goes up with this submission.
+3. **Screenshots.** Run the workflow for what it can capture; Hand Mouse and
+   Gesture Studio need a real device because the Simulator has no camera.
+4. **Sandbox-test purchase and Restore** — Debug build, Settings → Developer →
+   Simulate Free, sandbox Apple Account signed in under Settings → Developer.
+5. **Fill the version page** from §1–§6 below.
+6. **Test on hardware.** `docs/QA.md`, and the wedging checks in particular:
+   these releases changed input injection, and a missed key-up latches the
+   user's *physical* keyboard until reboot.
+7. **Turn Simulate Free off**, Archive for Release, upload, submit.
 
 ---
 
