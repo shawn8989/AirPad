@@ -76,7 +76,10 @@ jobs:
           rm -rf docs/screenshots/raw
           mkdir -p docs/screenshots/raw
           # -uiPreview makes the app present the connected UI without a Mac.
-          xcrun simctl launch "$UDID" com.SOTechy.AirPad -uiPreview
+          # A fresh install has never completed onboarding, so the sheet would
+          # cover that UI -- -hasCompletedOnboarding YES lands in NSUserDefaults'
+          # argument domain and skips it, same trick as -uiPreview itself.
+          xcrun simctl launch "$UDID" com.SOTechy.AirPad -uiPreview -hasCompletedOnboarding YES
           sleep 8
           xcrun simctl io "$UDID" screenshot --type=png docs/screenshots/raw/01-trackpad.png
           echo "Captured the main screen. Deeper screens need UI automation;"
