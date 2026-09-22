@@ -36,21 +36,28 @@ jobs:
             -configuration Debug \
             -derivedDataPath .build-sim \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || xcodebuild build \
-            -project AirPad.xcodeproj -scheme AirPad -sdk iphonesimulator \
-            -configuration Debug -derivedDataPath .build-sim CODE_SIGNING_ALLOWED=NO
+            -quiet
 
       - name: Boot the simulator
         id: sim
         run: |
-          UDID=$(xcrun simctl list devices available \
-                 | grep -m1 "${{ inputs.device }} (" \
-                 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          pick() {
+            xcrun simctl list devices available \
+              | grep -m1 "$1" \
+              | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/'
+          }
+          UDID=$(pick "${{ inputs.device }} (")
           if [ -z "$UDID" ]; then
-            echo "No simulator named '${{ inputs.device }}'. Available:"
-            xcrun simctl list devices available | grep iPhone
+            echo "No simulator named '${{ inputs.device }}' on this runner;"
+            echo "falling back to the first available iPhone."
+            UDID=$(pick "iPhone")
+          fi
+          if [ -z "$UDID" ]; then
+            echo "No iPhone simulators at all. Available devices:"
+            xcrun simctl list devices available
             exit 1
           fi
+          echo "Using simulator $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
@@ -66,6 +73,7 @@ jobs:
           UDID="${{ steps.sim.outputs.udid }}"
           APP=$(find .build-sim/Build/Products -name "AirPad.app" -maxdepth 3 | head -1)
           xcrun simctl install "$UDID" "$APP"
+          rm -rf docs/screenshots/raw
           mkdir -p docs/screenshots/raw
           # -uiPreview makes the app present the connected UI without a Mac.
           xcrun simctl launch "$UDID" com.SOTechy.AirPad -uiPreview
