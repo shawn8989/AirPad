@@ -136,6 +136,45 @@ final class SecurityManager {
         return true
     }
 
+    /// Deletes EVERY per-Mac secret this app holds.
+    ///
+    /// "Forget" previously deleted only the legacy global `shared_secret`
+    /// account, which pairing stopped writing when per-Mac keys arrived. Both
+    /// Forget buttons therefore appeared to work and did nothing: the next
+    /// connection re-authenticated silently against the still-present
+    /// `mac_secret.<macID>` entry. This is also the manual recovery step the
+    /// Help screen and the site FAQ tell people to use, so it has to be real.
+    ///
+    /// Returns the number of entries removed.
+    @discardableResult
+    func deleteAllMacSecrets() throws -> Int {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return 0 }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status),
+                          userInfo: [NSLocalizedDescriptionKey: "Keychain enumerate failed: \(status)"])
+        }
+        var removed = 0
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  account.hasPrefix("mac_secret.") else { continue }
+            let delete: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: keychainService,
+                kSecAttrAccount as String: account
+            ]
+            if SecItemDelete(delete as CFDictionary) == errSecSuccess { removed += 1 }
+        }
+        return removed
+    }
+
     // MARK: - Server certificate pinning
     func storeServerCertFingerprint(_ fingerprint: Data) throws {
         // Remove existing

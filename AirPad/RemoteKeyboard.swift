@@ -88,9 +88,15 @@ struct RemoteKeyboardInput: UIViewRepresentable {
         field.smartDashesType = .no
 
         // Accessory strip docked above the system keyboard.
+        // Retained by the field: only `bar.view` was kept before, so the
+        // controller deallocated at the end of this function and left an
+        // orphaned hosting view with nothing driving its update cycle — the
+        // modifier toggles stopped reflecting state, and the bar could fail to
+        // lay out at all.
         let bar = UIHostingController(rootView: RemoteKeyboardBar(state: state) {
             isVisible = false
         })
+        field.accessoryController = bar
         bar.view.frame = CGRect(x: 0, y: 0, width: 0, height: 46)
         bar.view.backgroundColor = .clear
         field.inputAccessoryView = bar.view
@@ -118,6 +124,8 @@ struct RemoteKeyboardInput: UIViewRepresentable {
     final class ForwardingTextField: UITextField, UITextFieldDelegate {
         weak var remoteState: RemoteKeyboardState?
         var onDismissed: (() -> Void)?
+        /// Strong reference to the accessory bar's hosting controller.
+        var accessoryController: UIViewController?
 
         // The field holds a zero-width sentinel followed by everything entered
         // since the keyboard came up. We never take that text back mid-session:
@@ -183,7 +191,12 @@ struct RemoteKeyboardInput: UIViewRepresentable {
                 sent = typed
                 return
             }
-            for _ in 0..<toDelete { remoteState?.sendKey(51) }  // Backspace
+            // Plain backspaces, deliberately NOT remoteState.sendKey: that
+            // applies the sticky modifiers and then clears them, so a pending ⌘
+            // (tapped for ⌘S) would be spent on an autocorrect revision as ⌘⌫ —
+            // "delete to beginning of line" in most fields — and the ⌘S the user
+            // actually wanted would arrive as a bare "s".
+            for _ in 0..<toDelete { NetworkManager.shared.sendKeyCombo(51) }  // Backspace
             if !toType.isEmpty { forward(toType) }
             sent = typed
         }

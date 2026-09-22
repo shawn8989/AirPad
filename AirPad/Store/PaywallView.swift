@@ -15,6 +15,14 @@ struct PaywallView: View {
     @State private var busy = false
 
     var body: some View {
+        content
+            // Retry the product fetch every time the paywall opens. Without
+            // this, a first launch with no network left the purchase button
+            // disabled for the rest of the session — Pro was unbuyable.
+            .task { await store.loadProductIfNeeded() }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(spacing: 20) {
                 Image(systemName: "wand.and.stars")

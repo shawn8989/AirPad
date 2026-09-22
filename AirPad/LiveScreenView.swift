@@ -268,7 +268,16 @@ struct LiveScreenView: View {
             if !isStreaming { startStreaming() }
             if startWithMirrorTip { showMirrorTip = true }
         }
-        .onDisappear { stopStreamingIfNeeded() }
+        .onDisappear {
+            // Leaving with Drag engaged left the Mac's button down, and
+            // re-entering showed "Drag" rather than "Release" — so the phone
+            // disagreed with the Mac about a button that was actually held.
+            if dragLocked {
+                NetworkManager.shared.sendMouseUp(button: "left")
+                dragLocked = false
+            }
+            stopStreamingIfNeeded()
+        }
         .onReceive(network.$liveImage) { image in
             if image != nil {
                 lastFrameAt = Date()
@@ -727,7 +736,12 @@ private struct EdgeGestureZones: View {
                 .allowsHitTesting(isActive)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
-        .allowsHitTesting(false)
+        // The ZStack must NOT disable hit testing: in SwiftUI an ancestor's
+        // allowsHitTesting(false) disables the whole subtree unconditionally,
+        // so the per-zone allowsHitTesting(isActive) above could never take
+        // effect and both edge gestures were dead in every mode. Gate the
+        // container on the same flag instead.
+        .allowsHitTesting(isActive)
         .opacity(isActive ? 0.001 : 0)
         .accessibilityHidden(true)
     }

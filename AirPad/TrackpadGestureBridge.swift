@@ -18,6 +18,15 @@ struct TrackpadGestureBridge: UIViewRepresentable {
         return v
     }
 
+    /// SwiftUI calls this when the view is removed. Without it, a drag locked
+    /// by double-tap stayed pressed on the Mac after navigating away — with no
+    /// UI left to release it, and a rebuilt host view starting at
+    /// `dragLocked == false`, so the next double-tap sent a SECOND mouse_down.
+    /// `AirMouseView` already released on disappear; this was the omission.
+    static func dismantleUIView(_ uiView: GestureHostView, coordinator: ()) {
+        uiView.releaseHeldDrag()
+    }
+
     func updateUIView(_ uiView: GestureHostView, context: Context) {
         uiView.configure(pointerSensitivity: pointerSensitivity, naturalScroll: naturalScroll, hapticsEnabled: hapticsEnabled, showTouches: showTouches, pinchZoomsMac: pinchZoomsMac)
     }
@@ -29,6 +38,19 @@ final class GestureHostView: UIView, UIGestureRecognizerDelegate {
     private var hapticsEnabled: Bool = true
 
     private var dragLocked = false
+
+    /// Releases a double-tap drag lock if one is active. Idempotent.
+    func releaseHeldDrag() {
+        guard dragLocked else { return }
+        dragLocked = false
+        NetworkManager.shared.sendMouseUp(button: "left")
+    }
+
+    deinit {
+        // dismantleUIView is the reliable path; this is the backstop for a
+        // teardown that skips it.
+        if dragLocked { NetworkManager.shared.sendMouseUp(button: "left") }
+    }
     private var pinchAccum: CGFloat = 1.0
     private var pinchZoomsMac: Bool = true
 

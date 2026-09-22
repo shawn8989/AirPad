@@ -20,6 +20,15 @@ struct AirPadApp: App {
                 .onChange(of: scenePhase) { oldPhase, newPhase in
                     if newPhase == .active {
                         NetworkManager.shared.tryAutoReconnectOnForeground()
+                    } else {
+                        // Anything still held belongs to the MAC, and leaving the
+                        // app strands it there with no way back: the Mac keeps the
+                        // button down and every cursor move drags. Hand Mouse is
+                        // the worst case — backgrounding interrupts the camera
+                        // session, so no more frames arrive, the recognizer never
+                        // reaches its hand-lost threshold, and a pinch-drag is
+                        // held indefinitely.
+                        NetworkManager.shared.releaseHeldInput()
                     }
                 }
                 .sheet(

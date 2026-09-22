@@ -36,14 +36,16 @@ struct ContentView: View {
                                         Button {
                                             // Switching to a DIFFERENT Mac is a Pro feature;
                                             // the first/current Mac is always free.
-                                            let isSwitch = service.name != network.currentMacName
+                                            // Compare like with like: both sides
+                                            // are Bonjour instance names.
+                                            let isSwitch = service.name != (network.connectedServiceName ?? network.currentMacName)
                                             if isSwitch && !proStore.isPro {
                                                 showMultiMacPaywall = true
                                             } else {
                                                 network.connect(to: service)
                                             }
                                         } label: {
-                                            if service.name == network.currentMacName {
+                                            if service.name == (network.connectedServiceName ?? network.currentMacName) {
                                                 Label("\(service.name) (current)", systemImage: "checkmark")
                                             } else {
                                                 Text(service.name)
@@ -371,11 +373,13 @@ struct MainControlView: View {
                 trackpad
                     .padding([.leading, .vertical])
 
+                // iPad has the room to keep the grid on screen, so it does.
                 VStack(spacing: 12) {
                     TrialBanner()
                     bridgeUpdateChip
                     tvChip
-                    quickActions
+                    primaryActions
+                    secondaryActions
                     tileGrid(columns: 2)
                     Spacer(minLength: 0)
                 }
@@ -383,7 +387,15 @@ struct MainControlView: View {
                 .padding([.trailing, .vertical])
             }
         } else {
-            VStack(spacing: 12) {
+            // The trackpad is the screen. It used to share space with a row of
+            // quick actions AND a nine-tile grid, which left it too small to
+            // use for the thing people do most, and buried the features that
+            // deserve one tap behind a wall of equal-weight tiles.
+            //
+            // Now: pad first and biggest, the three controls that go with
+            // pointing directly under it, and everything else one tap away
+            // under Modes.
+            VStack(spacing: 10) {
                 TrialBanner()
                     .padding(.top, 4)
 
@@ -394,10 +406,10 @@ struct MainControlView: View {
                 trackpad
                     .padding(.horizontal)
 
-                quickActions
+                primaryActions
                     .padding(.horizontal)
 
-                tileGrid(columns: 4)
+                secondaryActions
                     .padding([.horizontal, .bottom])
             }
         }
@@ -414,13 +426,10 @@ struct MainControlView: View {
     /// text into each other on a phone — the icons were clipped and the words
     /// unreadable. Stacking them gives each button a legible fixed height and
     /// lets all five share the width evenly.
-    private var quickActions: some View {
-        HStack(spacing: 6) {
-            // Desktop hop, one tap from the trackpad — no swipe gymnastics.
-            quickButton("Desktop", "chevron.left", accessibility: "Previous desktop") {
-                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            }
+    /// The three things you reach for while your other hand is on the pad.
+    /// Full width and tall enough to hit without looking.
+    private var primaryActions: some View {
+        HStack(spacing: 8) {
             quickButton("Click", "cursorarrow.click", prominent: true) {
                 NetworkManager.shared.sendClick(button: "left")
             }
@@ -429,8 +438,23 @@ struct MainControlView: View {
             }
             // Goes to the full Keyboard screen rather than raising a panel over
             // this one: typing needs a trackpad and click buttons next to it,
-            // and there is no room for all three here.
-            quickLink("Keys", "keyboard") { KeyboardModeView() }
+            // and there is no room for all three here. It is also the manual
+            // way in, which matters while the Mac-side auto-raise is unreliable.
+            quickLink("Keyboard", "keyboard") { KeyboardModeView() }
+        }
+    }
+
+    /// Navigation: which desktop, which window, and everything else.
+    /// "Apps" was previously only reachable from inside Live Screen, and the
+    /// desktop switcher was one tile among nine — both are top-level jobs.
+    private var secondaryActions: some View {
+        HStack(spacing: 8) {
+            quickButton("Desktop", "chevron.left", accessibility: "Previous desktop") {
+                NetworkManager.shared.sendSwipe(fingers: 3, direction: "left", skipFullscreen: true)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+            quickLink("Apps", "square.grid.2x2") { MacSwitcherView() }
+            quickLink("Modes", "ellipsis.circle") { ModesView() }
             quickButton("Desktop", "chevron.right", accessibility: "Next desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -533,6 +557,7 @@ struct SettingsView: View {
     @AppStorage("naturalScroll") private var naturalScroll: Bool = true
     @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
     @AppStorage("showTouches") private var showTouches: Bool = true
+    @AppStorage("autoKeyboard") private var autoKeyboard: Bool = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
     var body: some View {
@@ -550,10 +575,11 @@ struct SettingsView: View {
                 Toggle("Haptic Feedback", isOn: $hapticsEnabled)
             }
             Section("Keyboard") {
-                Toggle("Auto keyboard in Live Screen", isOn: Binding(
-                    get: { UserDefaults.standard.object(forKey: "autoKeyboard") as? Bool ?? true },
-                    set: { UserDefaults.standard.set($0, forKey: "autoKeyboard") }
-                ))
+                // @AppStorage, not a raw UserDefaults binding: writing defaults
+                // directly invalidates nothing, so the rendered switch could
+                // disagree with the stored value — and ContentView reads the
+                // same key through @AppStorage, which does observe.
+                Toggle("Auto keyboard", isOn: $autoKeyboard)
                 Text("Pops the keyboard up automatically when you click into a text field on the Mac.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
