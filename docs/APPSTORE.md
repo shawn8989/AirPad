@@ -24,26 +24,28 @@ an Apple ID, or a device, which is why it is still here.
   over, and the IAP description is 53 against a limit of 55.
 - Screenshot pipeline: `.github/workflows/screenshots.yml` captures and frames
   on a CI runner, no Mac needed. Run it from the Actions tab.
+- **Wield Host 1.0.1 published** — signed with Developer ID, notarized, and
+  stapled to the `.app` as well as the DMG (a DMG's ticket does not travel with
+  a bundle extracted from it). `spctl` accepts the zip as Notarized Developer ID
+  after a zip/unzip round trip, so Gatekeeper stays quiet. `releases/latest`
+  resolves to `v1.0.1`, which is what the site's download buttons and the
+  in-app update check both read.
 
 ### Left to do, in order
 
-1. **Publish Wield Host 1.0.1.** Archive → Direct Distribution → notarize →
-   export → zip → GitHub release tagged `v1.0.1`. Needs the Developer ID
-   certificate and the `airbridge-notary` notarytool profile. *This gates
-   everything else: the reviewer notes send App Review to that download.*
-2. **Finish the IAP** — Availability (all countries), price (USD 9.99),
+1. **Finish the IAP** — Availability (all countries), price (USD 9.99),
    English (U.S.) localisation, review screenshot — then attach it to version
    1.0. The banner in ASC about a first non-consumable shipping with a version
    is telling you it goes up with this submission.
-3. **Screenshots.** Run the workflow for what it can capture; Hand Mouse and
+2. **Screenshots.** Run the workflow for what it can capture; Hand Mouse and
    Gesture Studio need a real device because the Simulator has no camera.
-4. **Sandbox-test purchase and Restore** — Debug build, Settings → Developer →
+3. **Sandbox-test purchase and Restore** — Debug build, Settings → Developer →
    Simulate Free, sandbox Apple Account signed in under Settings → Developer.
-5. **Fill the version page** from §1–§6 below.
-6. **Test on hardware.** `docs/QA.md`, and the wedging checks in particular:
+4. **Fill the version page** from §1–§6 below.
+5. **Test on hardware.** `docs/QA.md`, and the wedging checks in particular:
    these releases changed input injection, and a missed key-up latches the
    user's *physical* keyboard until reboot.
-7. **Turn Simulate Free off**, Archive for Release, upload, submit.
+6. **Turn Simulate Free off**, Archive for Release, upload, submit.
 
 ---
 
