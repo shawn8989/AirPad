@@ -84,8 +84,9 @@ jobs:
 
       - name: Frame for the App Store
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check pillow
-          python3 scripts/frame-screenshots.py docs/screenshots/raw docs/screenshots/framed
+          python3 -m venv .venv-frame
+          .venv-frame/bin/pip install --quiet --disable-pip-version-check pillow
+          .venv-frame/bin/python3 scripts/frame-screenshots.py docs/screenshots/raw docs/screenshots/framed
 
       - uses: actions/upload-artifact@v4
         with:
