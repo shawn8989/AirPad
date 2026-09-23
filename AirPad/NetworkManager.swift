@@ -210,8 +210,8 @@ final class NetworkManager: ObservableObject {
         // can never claim to be connected when it is not.
         if Self.isUIPreview {
             isConnected = true
-            currentMacName = "Shawn's MacBook Pro"
-            connectedServiceName = "Shawn's MacBook Pro"
+            currentMacName = "MacBook Pro"
+            connectedServiceName = "MacBook Pro"
             bridgeFeatures = Set(BridgeFeature.all)
             bridgeProtocolVersion = kAirBridgeProtocolVersion
             return   // deliberately no Bonjour browsing
