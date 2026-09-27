@@ -3,6 +3,11 @@
 Everything you (the developer) do on your Mac to ship Wield to the App Store and
 distribute Wield Host. Work top to bottom; each section is a checklist.
 
+> **Mostly historical.** §0–§2 and §4 are done: the app record, the IAP, the
+> signing setup, the notarized Wield Host 1.0.1 release, and GitHub Pages all
+> exist, and the §2 metadata draft was superseded by `docs/APPSTORE.md`. For what
+> is actually left, read **`docs/SUBMIT.md`**.
+
 ---
 
 ## 0. One-time setup

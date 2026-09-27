@@ -45,7 +45,12 @@ an Apple ID, or a device, which is why it is still here.
 5. **Test on hardware.** `docs/QA.md`, and the wedging checks in particular:
    these releases changed input injection, and a missed key-up latches the
    user's *physical* keyboard until reboot.
-6. **Turn Simulate Free off**, Archive for Release, upload, submit.
+6. Archive for Release, upload, submit. (Simulate Free needs no thought — it
+   and the always-Pro shortcut are both inside `#if DEBUG`.)
+
+**`docs/SUBMIT.md` is the standalone walkthrough of steps 1–6**, with the
+commands and the order. This file stays the reference for *why* each listing
+decision is what it is.
 
 ---
 
