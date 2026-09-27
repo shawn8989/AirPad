@@ -179,6 +179,13 @@ final class NetworkManager: ObservableObject {
     private var reconnectTimer: DispatchSourceTimer?
     private var reconnectBackoff: TimeInterval = 1.0 // seconds, exponential up to max
     private let maxBackoff: TimeInterval = 30.0
+    /// True between "the Mac is going to show an approval dialog" and the
+    /// approval landing. Queue-confined — `isPairing` is the @Published mirror
+    /// of it for the UI and cannot be read safely from the network queue.
+    ///
+    /// This exists so a denial can be told apart from an ordinary error: the
+    /// shipped Wield Host 1.0.1 reports a refusal only as a generic `error`.
+    private var awaitingPairApproval = false
 
     private let security = SecurityManager.shared
 
@@ -410,6 +417,9 @@ final class NetworkManager: ObservableObject {
         reconnectBackoff = 1.0
         reconnectTimer?.cancel()
         reconnectTimer = nil
+        // A deliberate tap is the user retrying; forget the last refusal so the
+        // new attempt is judged on its own.
+        awaitingPairApproval = false
         // Desktop ids can change across Mac restarts; drop previews keyed by
         // the old session's ids so stale images never stick to wrong cards.
         DispatchQueue.main.async { self.desktopPreviews = [:] }
@@ -656,6 +666,34 @@ final class NetworkManager: ObservableObject {
         log("Trust reset complete")
     }
 
+    /// The Mac refused this device (the user tapped Deny, or the approval timed
+    /// out). Stop retrying and say so, rather than leaving the user watching
+    /// silent reconnects and a dialog that keeps coming back.
+    private func handlePairingDenied(reason: String?) {
+        awaitingPairApproval = false
+        stopAutoReconnect()
+        log("Pairing denied by the Mac\(reason.map { " (\($0))" } ?? "") — auto-reconnect off")
+        DispatchQueue.main.async {
+            self.isPairing = false
+            self.connectingServiceID = nil
+            self.lastErrorMessage = "The Mac declined this device. Approve the request on the Mac, then tap it again to retry."
+        }
+    }
+
+    /// Switch auto-reconnect OFF without the user-facing teardown `disconnect()`
+    /// performs (no `bye` down a socket the Mac has already cancelled).
+    ///
+    /// Needed because reconnecting is the wrong response to some drops. A denied
+    /// pairing is the case that bites: the Mac cancels the socket, the phone
+    /// retries, the Mac prompts again, and the user is stuck refusing the same
+    /// dialog forever — backoff caps the rate but nothing ends it.
+    private func stopAutoReconnect() {
+        lastService = nil
+        reconnectTimer?.cancel()
+        reconnectTimer = nil
+        reconnectBackoff = 1.0
+    }
+
     private func scheduleReconnect(immediate: Bool = false) {
         guard let service = lastService else { return }
         reconnectTimer?.cancel()
@@ -808,6 +846,14 @@ final class NetworkManager: ObservableObject {
                     // have to survive: treat "no list" as "assume the basics".
                     let features = payload["features"] as? [String]
                     let bridgeVersion = payload["appVersion"] as? String
+                    // No key for this Mac means the `hello` we just sent will put
+                    // an approval dialog on its screen, so an error arriving from
+                    // here on may be a refusal rather than a fault. QR pairing is
+                    // exempt: it is approved by the scan itself.
+                    if self.pendingQRPairing == nil,
+                       ((try? self.security.getSharedSecret(forMac: macID)) ?? nil) == nil {
+                        self.awaitingPairApproval = true
+                    }
                     DispatchQueue.main.async {
                         self.currentMacName = macName
                         self.bridgeVersion = bridgeVersion
@@ -865,6 +911,7 @@ final class NetworkManager: ObservableObject {
                     try? self.security.storeSharedSecret(derived, forMac: qr.macID)
                     self.pendingQRPairing = nil
                     self.log("QR pairing complete with \(qr.macName)")
+                    self.awaitingPairApproval = false
                     DispatchQueue.main.async { self.isPairing = false }
                 }
 
@@ -884,6 +931,7 @@ final class NetworkManager: ObservableObject {
                    let secret = Data(base64Encoded: secretB64),
                    let macID = self.currentMacID {
                     try? security.storeSharedSecret(secret, forMac: macID)
+                    self.awaitingPairApproval = false
                     DispatchQueue.main.async { self.isPairing = false }
                 }
 
@@ -902,6 +950,7 @@ final class NetworkManager: ObservableObject {
                     // Server thinks we're known but we have no key for this Mac
                     // (e.g. an install that predates per-Mac keys). Re-pair.
                     self.log("auth_challenge: no per-Mac secret; requesting re-pair")
+                    self.awaitingPairApproval = true
                     DispatchQueue.main.async { self.isPairing = true }
                     try? self.send(type: "pair_request", payload: [:])
                 }
@@ -911,6 +960,7 @@ final class NetworkManager: ObservableObject {
                 // Clear THIS Mac's key so the automatic reconnect re-pairs.
                 self.log("Server requested re-pair; clearing per-Mac secret")
                 if let macID = self.currentMacID { _ = try? self.security.deleteSharedSecret(forMac: macID) }
+                self.awaitingPairApproval = true
                 DispatchQueue.main.async { self.isPairing = true }
 
             case "installed_apps":
@@ -1023,9 +1073,21 @@ final class NetworkManager: ObservableObject {
                     }
                 }
 
+            case "pair_denied":
+                // Explicit refusal from a Host that knows this message type.
+                self.handlePairingDenied(reason: obj?["message"] as? String)
+
             case "error":
                 let message = obj?["message"] as? String ?? "Unknown error"
-                DispatchQueue.main.async { self.lastErrorMessage = message }
+                // An error while the Mac has our approval dialog up is a refusal
+                // in all but name. Wield Host 1.0.1 is already in the wild and
+                // sends nothing better, so the phone has to infer it — otherwise
+                // it reconnects and re-prompts until the user gives in.
+                if self.awaitingPairApproval {
+                    self.handlePairingDenied(reason: message)
+                } else {
+                    DispatchQueue.main.async { self.lastErrorMessage = message }
+                }
             case "video_jpeg":
                 if let payload = obj?["payload"] as? [String: Any],
                    let b64 = payload["data"] as? String,
