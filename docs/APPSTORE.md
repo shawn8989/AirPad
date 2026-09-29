@@ -12,7 +12,8 @@ READY_FOR_REVIEW validation in draft submission
 `5aec15b9-ef30-4636-9906-3359d7305944`. **Not submitted.** Manual release is selected.
 
 The free app price, $9.99 Pro price, age rating, content rights, listing, reviewer
-notes, and selected build are saved. All three public URLs returned HTTP 200.
+notes, and selected build are saved. App availability matches the 175 territories
+already selected for Pro. All three public URLs returned HTTP 200.
 The listing now reflects the shipped host's actual macOS 26.1 minimum and the
 correct free/Pro feature split. There is no attached demo video.
 
