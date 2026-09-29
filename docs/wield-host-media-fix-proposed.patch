@@ -1,0 +1,206 @@
+--- a/AirBridge/NetworkManager.swift
++++ b/AirBridge/NetworkManager.swift
+@@ -2237,10 +2237,14 @@
+             payload["muted"] = muted.booleanValue
+         }
+ 
+-        for app in ["Music", "Spotify"] {
++        for (app, bundleID) in [("Music", "com.apple.Music"), ("Spotify", "com.spotify.client")] {
++            // AppleScript resolves application names while compiling, even inside
++            // an `is running` check. A missing Spotify install opened a hidden
++            // chooser and stalled media polling on the main thread.
++            guard !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty else { continue }
+             let script = """
+-            if application "\(app)" is running then
+-                tell application "\(app)"
++            if application id "\(bundleID)" is running then
++                tell application id "\(bundleID)"
+                     if player state is playing then
+                         return (name of current track) & "\u{0001}" & (artist of current track)
+                     end if
+--- a/AirBridge.xcodeproj/project.pbxproj
++++ b/AirBridge.xcodeproj/project.pbxproj
+@@ -395,8 +395,9 @@
+ 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+ 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+ 				CODE_SIGN_STYLE = Automatic;
++				CODE_SIGN_ENTITLEMENTS = AirBridge/AirBridge.entitlements;
+ 				COMBINE_HIDPI_IMAGES = YES;
+-				CURRENT_PROJECT_VERSION = 2;
++				CURRENT_PROJECT_VERSION = 3;
+ 				DEVELOPMENT_TEAM = EU6247328G;
+ 				ENABLE_APP_SANDBOX = YES;
+ 				ENABLE_HARDENED_RUNTIME = YES;
+@@ -421,7 +422,7 @@
+ 					"$(inherited)",
+ 					"@executable_path/../Frameworks",
+ 				);
+-				MARKETING_VERSION = 1.0.1;
++				MARKETING_VERSION = 1.0.2;
+ 				PRODUCT_BUNDLE_IDENTIFIER = com.SOTechy.AirBridge;
+ 				PRODUCT_NAME = "Wield Host";
+ 				REGISTER_APP_GROUPS = YES;
+@@ -440,8 +441,9 @@
+ 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+ 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+ 				CODE_SIGN_STYLE = Automatic;
++				CODE_SIGN_ENTITLEMENTS = AirBridge/AirBridge.entitlements;
+ 				COMBINE_HIDPI_IMAGES = YES;
+-				CURRENT_PROJECT_VERSION = 2;
++				CURRENT_PROJECT_VERSION = 3;
+ 				DEVELOPMENT_TEAM = EU6247328G;
+ 				ENABLE_APP_SANDBOX = YES;
+ 				ENABLE_HARDENED_RUNTIME = YES;
+@@ -466,7 +468,7 @@
+ 					"$(inherited)",
+ 					"@executable_path/../Frameworks",
+ 				);
+-				MARKETING_VERSION = 1.0.1;
++				MARKETING_VERSION = 1.0.2;
+ 				PRODUCT_BUNDLE_IDENTIFIER = com.SOTechy.AirBridge;
+ 				PRODUCT_NAME = "Wield Host";
+ 				REGISTER_APP_GROUPS = YES;
+@@ -484,11 +486,12 @@
+ 			buildSettings = {
+ 				BUNDLE_LOADER = "$(TEST_HOST)";
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 2;
++				CODE_SIGN_ENTITLEMENTS = AirBridge/AirBridge.entitlements;
++				CURRENT_PROJECT_VERSION = 3;
+ 				DEVELOPMENT_TEAM = EU6247328G;
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				MACOSX_DEPLOYMENT_TARGET = 26.1;
+-				MARKETING_VERSION = 1.0.1;
++				MARKETING_VERSION = 1.0.2;
+ 				PRODUCT_BUNDLE_IDENTIFIER = com.SOTechy.AirBridgeTests;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+@@ -505,11 +508,12 @@
+ 			buildSettings = {
+ 				BUNDLE_LOADER = "$(TEST_HOST)";
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 2;
++				CODE_SIGN_ENTITLEMENTS = AirBridge/AirBridge.entitlements;
++				CURRENT_PROJECT_VERSION = 3;
+ 				DEVELOPMENT_TEAM = EU6247328G;
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				MACOSX_DEPLOYMENT_TARGET = 26.1;
+-				MARKETING_VERSION = 1.0.1;
++				MARKETING_VERSION = 1.0.2;
+ 				PRODUCT_BUNDLE_IDENTIFIER = com.SOTechy.AirBridgeTests;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+@@ -525,10 +529,11 @@
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 2;
++				CODE_SIGN_ENTITLEMENTS = AirBridge/AirBridge.entitlements;
++				CURRENT_PROJECT_VERSION = 3;
+ 				DEVELOPMENT_TEAM = EU6247328G;
+ 				GENERATE_INFOPLIST_FILE = YES;
+-				MARKETING_VERSION = 1.0.1;
++				MARKETING_VERSION = 1.0.2;
+ 				PRODUCT_BUNDLE_IDENTIFIER = com.SOTechy.AirBridgeUITests;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+@@ -544,10 +549,11 @@
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+ 				CODE_SIGN_STYLE = Automatic;
+-				CURRENT_PROJECT_VERSION = 2;
++				CODE_SIGN_ENTITLEMENTS = AirBridge/AirBridge.entitlements;
++				CURRENT_PROJECT_VERSION = 3;
+ 				DEVELOPMENT_TEAM = EU6247328G;
+ 				GENERATE_INFOPLIST_FILE = YES;
+-				MARKETING_VERSION = 1.0.1;
++				MARKETING_VERSION = 1.0.2;
+ 				PRODUCT_BUNDLE_IDENTIFIER = com.SOTechy.AirBridgeUITests;
+ 				PRODUCT_NAME = "$(TARGET_NAME)";
+ 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+--- a/AirBridge/AirBridge.entitlements
++++ b/AirBridge/AirBridge.entitlements
+@@ -2,32 +2,26 @@
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+-    <!-- Required capabilities -->
+-    <key>com.apple.security.network.server</key>
+-    <true/>
+-    <key>com.apple.security.personal-information.keychain</key>
+-    <true/>
++    <!-- Preserve the capabilities already present in the signed 1.0.1 host. -->
++    <key>com.apple.security.app-sandbox</key><true/>
++    <key>com.apple.security.network.client</key><true/>
++    <key>com.apple.security.network.server</key><true/>
++    <key>com.apple.security.device.audio-input</key><true/>
++    <key>com.apple.security.device.bluetooth</key><true/>
++    <key>com.apple.security.files.user-selected.read-only</key><true/>
+ 
+-    <!-- Accessibility temporary exception (only used if sandboxed and required for CGEvent workflows) -->
+-    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+-    <array>
+-        <string>com.apple.axserver</string>
+-    </array>
+-
+-    <!-- Explicit denials -->
+-    <key>com.apple.security.files.user-selected.read-only</key>
+-    <false/>
+-    <key>com.apple.security.files.user-selected.read-write</key>
+-    <false/>
+-    <key>com.apple.security.files.downloads.read-write</key>
+-    <false/>
+-    <key>com.apple.security.files.all</key>
+-    <false/>
+-    <key>com.apple.security.device.camera</key>
+-    <false/>
+-    <key>com.apple.security.device.microphone</key>
+-    <false/>
+-    <key>com.apple.security.automation.apple-events</key>
+-    <false/>
++    <!-- Both hardened runtime and App Sandbox need to allow Now Playing queries.
++         macOS still asks the user to allow automation of each music player. -->
++    <key>com.apple.security.automation.apple-events</key><true/>
++    <key>com.apple.security.scripting-targets</key>
++    <dict>
++        <key>com.apple.Music</key>
++        <array>
++            <string>com.apple.Music.playback</string>
++            <string>com.apple.Music.library.read</string>
++        </array>
++    </dict>
++    <key>com.apple.security.temporary-exception.apple-events</key>
++    <array><string>com.spotify.client</string></array>
+ </dict>
+ </plist>
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -2,7 +2,7 @@
+ 
+ on:
+   push:
+-    branches: [main, "claude/**"]
++    branches: [main, "claude/**", "codex/**"]
+   pull_request:
+     branches: [main]
+ 
+@@ -22,6 +22,18 @@
+           xcodebuild build \
+             -project AirBridge.xcodeproj \
+             -scheme AirBridge \
+-            -destination 'platform=macOS' \
++            -destination 'generic/platform=macOS' \
++            -configuration Release \
++            -derivedDataPath build/ci \
++            ARCHS='arm64 x86_64' \
++            ONLY_ACTIVE_ARCH=NO \
+             CODE_SIGNING_ALLOWED=NO \
+             CODE_SIGN_IDENTITY=""
++
++      - name: Package unsigned app for signing and device verification
++        run: ditto -c -k --keepParent 'build/ci/Build/Products/Release/Wield Host.app' build/Wield-Host-unsigned.zip
++
++      - uses: actions/upload-artifact@v4
++        with:
++          name: Wield-Host-unsigned
++          path: build/Wield-Host-unsigned.zip

@@ -10,11 +10,15 @@ App: **Wield: Mac Remote & Trackpad** · Apple ID 6804338937 · `com.SOTechy.Air
 ## Version page (iOS App → 1.0 Prepare for Submission)
 
 ### Screenshots → iPhone → 6.5" Display
-Upload from `docs/screenshots/framed/`:
-- `01-trackpad-6.5-1284x2778.png`
+Final order from `docs/screenshots/framed/`:
+- `02-livescreen-6.5-1284x2778.png` — uploaded, visually checked
+- `04-desktops-6.5-1284x2778.png` — still to capture
+- `06-media-6.5-1284x2778.png` — blocked on host Now Playing fix
+- `01-trackpad-6.5-1284x2778.png` — uploaded, visually checked
 
-(Minimum is one. Live Screen and Hand Mouse need a real device — add later;
-screenshots can be changed while the version is in Prepare for Submission.)
+The iPad set contains the clean real-connection `docs/screenshots/ipad/01-trackpad.png`.
+See `APPSTORE.md` for the current submission blockers. Do not submit an incomplete
+screenshot set or mark real-device checks complete without hardware evidence.
 
 ### Promotional Text
 ```
@@ -55,10 +59,10 @@ WAKE YOUR MAC
 Wake a sleeping Mac from the app, and connect by address when you're on a VPN.
 
 FREE + PRO
-The trackpad, keyboard, and media controls are free forever. Wield Pro unlocks Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher with a one-time purchase — no subscription. Every new install starts with a 7-day free trial of everything.
+The trackpad and keyboard are free forever. Wield Pro unlocks Air Mouse, Live Screen, Hand Mouse, Gesture Studio, Media Remote, the desktop switcher, and multi-Mac switching with a one-time purchase — no subscription. Every new install starts with a 7-day free trial of everything.
 
 REQUIREMENTS
-Wield needs the free Wield Host companion app running on your Mac (macOS 13 or later), and both devices on the same network. Download it at: https://shawn8989.github.io/AirBridge-mac/
+Wield needs the free Wield Host companion app running on your Mac (macOS 26.1 or later), and both devices on the same network. Download it at: https://shawn8989.github.io/AirBridge-mac/
 ```
 
 ### Keywords
@@ -99,7 +103,7 @@ failed — check the Mac session's output.
 IMPORTANT — Wield is a remote control for a Mac and requires its free companion app to function.
 
 To test:
-1. On a Mac (macOS 13 or later), download and open Wield Host:
+1. On a Mac (macOS 26.1 or later), download and open Wield Host:
    https://shawn8989.github.io/AirBridge-mac/
    It is free, requires no account, and is signed and notarized by us.
 2. On first launch Wield Host asks for two macOS permissions — Accessibility and
@@ -113,11 +117,12 @@ To test:
 5. The trackpad now controls the Mac's cursor.
 
 Without a Mac running Wield Host, the app will show "Looking for your Mac" and no
-features can be exercised. We have included a demo video showing the full flow.
+features can be exercised.
 
 IN-APP PURCHASE
 Wield Pro (com.airpad.pro.lifetime) is a one-time non-consumable unlock for
-Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher. Every new
+Air Mouse, Live Screen, Hand Mouse, Gesture Studio, Media Remote, the desktop
+switcher, and multi-Mac switching. Every new
 install begins with an automatic 7-day free trial of these features, so all Pro
 functionality is testable without purchasing. There is no account system: the
 purchase is tied to the Apple ID, and "Restore Purchases" is on the paywall

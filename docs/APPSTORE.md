@@ -7,8 +7,30 @@ Copy/paste the metadata blocks straight into ASC.
 
 ## 0. Where this stands
 
-Updated 2026-09-22. Done is done; everything under "Left to do" needs a Mac,
-an Apple ID, or a device, which is why it is still here.
+Updated 2026-09-29. Version 1.0/build 1 and Wield Pro pass App Store Connect's
+READY_FOR_REVIEW validation in draft submission
+`5aec15b9-ef30-4636-9906-3359d7305944`. **Not submitted.** Manual release is selected.
+
+The free app price, $9.99 Pro price, age rating, content rights, listing, reviewer
+notes, and selected build are saved. All three public URLs returned HTTP 200.
+The listing now reflects the shipped host's actual macOS 26.1 minimum and the
+correct free/Pro feature split. There is no attached demo video.
+
+Clean real-connection Trackpad and Live Screen images have been framed, visually
+checked, and uploaded to the 6.5-inch set. An iPad trackpad image is uploaded too.
+The previous trackpad screenshot was removed. Media and Desktops remain unfinished;
+do not represent their screenshot set as complete.
+
+Wield Host 1.0.1 cannot return Now Playing metadata in the installed signed build:
+its sandbox/hardened-runtime signature lacks Music/Spotify automation access.
+Sampling also found AppleScript waiting to resolve an application name while
+compiling the media query. A review-only patch is saved in
+`wield-host-media-fix-proposed.patch`; it has NOT been applied. Automatic approval
+review requires explicit owner approval for the Music/Spotify access changes.
+
+Before final submission, finish and visually review the remaining captures, confirm
+real-iPhone sandbox purchase/Restore and input-release tests, and resolve the host
+media defect. Do not mark hardware testing complete based on simulator captures.
 
 ### Done
 
@@ -33,19 +55,14 @@ an Apple ID, or a device, which is why it is still here.
 
 ### Left to do, in order
 
-1. **Finish the IAP** — Availability (all countries), price (USD 9.99),
-   English (U.S.) localisation, review screenshot — then attach it to version
-   1.0. The banner in ASC about a first non-consumable shipping with a version
-   is telling you it goes up with this submission.
-2. **Screenshots.** Run the workflow for what it can capture; Hand Mouse and
-   Gesture Studio need a real device because the Simulator has no camera.
-3. **Sandbox-test purchase and Restore** — Debug build, Settings → Developer →
-   Simulate Free, sandbox Apple Account signed in under Settings → Developer.
-4. **Fill the version page** from §1–§6 below.
-5. **Test on hardware.** `docs/QA.md`, and the wedging checks in particular:
-   these releases changed input injection, and a missed key-up latches the
-   user's *physical* keyboard until reboot.
-6. **Turn Simulate Free off**, Archive for Release, upload, submit.
+1. Obtain explicit approval for the proposed Music/Spotify access fix; apply it,
+   verify CI, sign/notarize the companion, and verify actual Now Playing behavior.
+2. Capture and inspect `04-desktops.png` and `06-media.png`, frame them, and upload.
+   Final 6.5-inch order: Live Screen, Desktops, Media, Trackpad.
+3. Confirm the owner's real-device purchase, Restore, Hand Mouse, and input-release
+   checks. Hand Mouse and Gesture Studio screenshots remain owner-supplied.
+4. Submit the existing review draft only when those blockers are resolved; preserve
+   manual release. Verify Apple's returned review status rather than assuming success.
 
 ---
 
@@ -126,10 +143,10 @@ WAKE YOUR MAC
 Wake a sleeping Mac from the app, and connect by address when you're on a VPN.
 
 FREE + PRO
-The trackpad, keyboard, and media controls are free forever. Wield Pro unlocks Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher with a one-time purchase — no subscription. Every new install starts with a 7-day free trial of everything.
+The trackpad and keyboard are free forever. Wield Pro unlocks Air Mouse, Live Screen, Hand Mouse, Gesture Studio, Media Remote, the desktop switcher, and multi-Mac switching with a one-time purchase — no subscription. Every new install starts with a 7-day free trial of everything.
 
 REQUIREMENTS
-Wield needs the free Wield Host companion app running on your Mac (macOS 13 or later), and both devices on the same network. Download it at: https://shawn8989.github.io/AirBridge-mac/
+Wield needs the free Wield Host companion app running on your Mac (macOS 26.1 or later), and both devices on the same network. Download it at: https://shawn8989.github.io/AirBridge-mac/
 ```
 
 ### Keywords (100 char max, comma separated, no spaces)
@@ -182,7 +199,7 @@ is fine) and must be attached to the app version before submitting.
 IMPORTANT — Wield is a remote control for a Mac and requires its free companion app to function.
 
 To test:
-1. On a Mac (macOS 13 or later), download and open Wield Host:
+1. On a Mac (macOS 26.1 or later), download and open Wield Host:
    https://shawn8989.github.io/AirBridge-mac/
    It is free, requires no account, and is signed and notarized by us.
 2. On first launch Wield Host asks for two macOS permissions — Accessibility and
@@ -196,11 +213,12 @@ To test:
 5. The trackpad now controls the Mac's cursor.
 
 Without a Mac running Wield Host, the app will show "Looking for your Mac" and no
-features can be exercised. We have included a demo video showing the full flow.
+features can be exercised.
 
 IN-APP PURCHASE
 Wield Pro (com.airpad.pro.lifetime) is a one-time non-consumable unlock for
-Live Screen, Hand Mouse, Gesture Studio, and the desktop switcher. Every new
+Air Mouse, Live Screen, Hand Mouse, Gesture Studio, Media Remote, the desktop
+switcher, and multi-Mac switching. Every new
 install begins with an automatic 7-day free trial of these features, so all Pro
 functionality is testable without purchasing. There is no account system: the
 purchase is tied to the Apple ID, and "Restore Purchases" is on the paywall
