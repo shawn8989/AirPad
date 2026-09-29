@@ -42,17 +42,20 @@ Spotify playback itself was not tested. The fix preserves App Sandbox and the
 existing capabilities while adding only Music/Spotify automation access.
 Reviewer notes now explain the new prompt and require Host 1.0.2 or later.
 
-The owner subsequently confirmed on 2026-09-29 that Hand Mouse and physical-input
-checks were already tested and working; the outstanding checks are purchase and
-Restore. Keep the existing review draft unsent until those pass.
+The owner confirmed on 2026-09-29 that Hand Mouse and physical-input checks
+passed. They installed the release candidate through TestFlight, confirmed
+Apple's no-charge test-purchase notice, and reported a successful purchase with
+Pro features unlocked. Restore remains unverified on this build: Settings hides
+its button once Pro is purchased. The owner explicitly accepted this remaining
+uncertainty and authorized submission; it is not recorded as a passed test.
 
-The connected iPhone reports Wield 1.0/build 1, but matching version labels do not
-establish that its installed binary is identical to the uploaded release. The
-uploaded release candidate is now assigned to the owner's existing internal
-TestFlight identity in the app's Owner Testing group, with automatic build
-notifications disabled. No other testers were added. Installation and sandbox
-purchase/Restore verification are still pending; iPhone Mirroring disconnected
-before those actions could be completed. No purchase has been attempted.
+The owner is the sole internal tester in Owner Testing, with build notifications
+enabled. No other testers were added.
+
+Submitted the app and Pro IAP review draft on 2026-09-29 at 11:15 AM Pacific.
+Apple returned `WAITING_FOR_REVIEW` for both the submission and app version.
+Manual release remains selected, so review approval will not publish the app
+without a separate release action.
 
 ### Done
 
@@ -77,11 +80,10 @@ before those actions could be completed. No purchase has been attempted.
 
 ### Left to do, in order
 
-1. Install the release candidate through TestFlight and verify sandbox purchase
-   and Restore. The owner reports Hand Mouse and physical input already passed.
-   Hand Mouse and Gesture Studio screenshots remain owner-supplied.
-2. Submit the existing review draft only when those checks pass; preserve
-   manual release. Verify Apple's returned review status rather than assuming success.
+1. Await Apple's review and address any feedback.
+2. Release manually after approval. Restore remains unverified on this build,
+   accepted by the owner for submission. Hand Mouse and Gesture Studio
+   screenshots remain owner-supplied.
 
 ---
 
