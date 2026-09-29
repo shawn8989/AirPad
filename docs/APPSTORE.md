@@ -42,9 +42,17 @@ Spotify playback itself was not tested. The fix preserves App Sandbox and the
 existing capabilities while adding only Music/Spotify automation access.
 Reviewer notes now explain the new prompt and require Host 1.0.2 or later.
 
-The owner answered **"Not yet / unsure"** to the real-iPhone release checks on
-2026-09-29. Purchase/Restore, Hand Mouse, and physical-input release checks remain
-unverified. Keep the existing review draft unsent until those checks pass.
+The owner subsequently confirmed on 2026-09-29 that Hand Mouse and physical-input
+checks were already tested and working; the outstanding checks are purchase and
+Restore. Keep the existing review draft unsent until those pass.
+
+The connected iPhone reports Wield 1.0/build 1, but matching version labels do not
+establish that its installed binary is identical to the uploaded release. The
+uploaded release candidate is now assigned to the owner's existing internal
+TestFlight identity in the app's Owner Testing group, with automatic build
+notifications disabled. No other testers were added. Installation and sandbox
+purchase/Restore verification are still pending; iPhone Mirroring disconnected
+before those actions could be completed. No purchase has been attempted.
 
 ### Done
 
@@ -69,8 +77,9 @@ unverified. Keep the existing review draft unsent until those checks pass.
 
 ### Left to do, in order
 
-1. Confirm the owner's real-device purchase, Restore, Hand Mouse, and input-release
-   checks. Hand Mouse and Gesture Studio screenshots remain owner-supplied.
+1. Install the release candidate through TestFlight and verify sandbox purchase
+   and Restore. The owner reports Hand Mouse and physical input already passed.
+   Hand Mouse and Gesture Studio screenshots remain owner-supplied.
 2. Submit the existing review draft only when those checks pass; preserve
    manual release. Verify Apple's returned review status rather than assuming success.
 

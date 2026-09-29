@@ -178,15 +178,17 @@ and never transmitted; local network traffic goes only to the user's own Mac.
 
 ## Before you press Submit
 
-- [ ] Wedging tests passed on hardware (see below — do not skip)
+- [x] Physical-input checks reported working by owner on 2026-09-29
 - [ ] Sandbox purchase and Restore both work
 - [x] All three URLs load in a browser
 - [x] Build selected on the version page
 - [x] IAP attached to the review draft alongside the version
 
-Owner confirmed on 2026-09-29 that real-iPhone purchase/Restore, Hand Mouse,
-and physical-input release checks are **not yet verified**. Keep submission
-unsent until these checks pass; Simulator screenshots do not establish that.
+Owner clarified on 2026-09-29 that Hand Mouse and physical input were already
+tested and working. **Purchase and Restore remain unverified.** An owner-only
+internal TestFlight group now contains the release candidate. Install that build
+and test its sandbox purchase/Restore before submitting; matching version labels
+on the existing iPhone installation do not establish an identical binary.
 
 ### The wedging tests
 With the phone connected, after each case use your PHYSICAL mouse and keyboard:
