@@ -7,13 +7,13 @@ App: **Wield: Mac Remote & Trackpad** · Apple ID 6804338937 · `com.SOTechy.Air
 
 ---
 
-## Version page (iOS App → 1.0 Prepare for Submission)
+## Version page (iOS App → 1.0 Ready for Review — not submitted)
 
 ### Screenshots → iPhone → 6.5" Display
 Final order from `docs/screenshots/framed/`:
 - `02-livescreen-6.5-1284x2778.png` — uploaded, visually checked
-- `04-desktops-6.5-1284x2778.png` — still to capture
-- `06-media-6.5-1284x2778.png` — blocked on host Now Playing fix
+- `04-desktops-6.5-1284x2778.png` — uploaded, visually checked; two clean desktop previews loaded
+- `06-media-6.5-1284x2778.png` — uploaded, visually checked; real Music playback via Host 1.0.2
 - `01-trackpad-6.5-1284x2778.png` — uploaded, visually checked
 
 The iPad set contains the clean real-connection `docs/screenshots/ipad/01-trackpad.png`.
@@ -103,13 +103,14 @@ failed — check the Mac session's output.
 IMPORTANT — Wield is a remote control for a Mac and requires its free companion app to function.
 
 To test:
-1. On a Mac (macOS 26.1 or later), download and open Wield Host:
+1. On a Mac (macOS 26.1 or later), download and open Wield Host 1.0.2 or later:
    https://shawn8989.github.io/AirBridge-mac/
    It is free, requires no account, and is signed and notarized by us.
 2. On first launch Wield Host asks for two macOS permissions — Accessibility and
    Screen Recording. Both must be granted in System Settings > Privacy &
    Security for input control and screen streaming to work. Wield Host shows an
    on-screen checklist that links directly to those panels.
+For Media Remote, play a track in Music or Spotify on the Mac and allow Wield Host to control that player when macOS asks.
 3. Put the iPhone and the Mac on the same Wi-Fi network.
 4. Open Wield on the iPhone. The Mac appears automatically in the list (it is
    discovered by Bonjour). Tap it to connect, and approve the pairing prompt
@@ -179,9 +180,13 @@ and never transmitted; local network traffic goes only to the user's own Mac.
 
 - [ ] Wedging tests passed on hardware (see below — do not skip)
 - [ ] Sandbox purchase and Restore both work
-- [ ] All three URLs load in a browser
-- [ ] Build selected on the version page
-- [ ] IAP attached to the version
+- [x] All three URLs load in a browser
+- [x] Build selected on the version page
+- [x] IAP attached to the review draft alongside the version
+
+Owner confirmed on 2026-09-29 that real-iPhone purchase/Restore, Hand Mouse,
+and physical-input release checks are **not yet verified**. Keep submission
+unsent until these checks pass; Simulator screenshots do not establish that.
 
 ### The wedging tests
 With the phone connected, after each case use your PHYSICAL mouse and keyboard:

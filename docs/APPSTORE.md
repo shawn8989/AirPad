@@ -17,21 +17,34 @@ already selected for Pro. All three public URLs returned HTTP 200.
 The listing now reflects the shipped host's actual macOS 26.1 minimum and the
 correct free/Pro feature split. There is no attached demo video.
 
-Clean real-connection Trackpad and Live Screen images have been framed, visually
-checked, and uploaded to the 6.5-inch set. An iPad trackpad image is uploaded too.
-The previous trackpad screenshot was removed. Media and Desktops remain unfinished;
-do not represent their screenshot set as complete.
+All four real-connection screenshots are framed, visually checked for personal
+names and private data, and uploaded with Apple's delivery state COMPLETE.
+The exact 6.5-inch order is Live Screen, Desktops, Media, Trackpad. An iPad
+trackpad image is uploaded too. The Desktops capture shows two clean loaded
+previews; the third visible card is still a placeholder. A later capture of the
+third desktop was excluded because it showed an existing document. No camera
+screenshots were fabricated; Hand Mouse and Gesture Studio remain owner-supplied.
 
-Wield Host 1.0.1 cannot return Now Playing metadata in the installed signed build:
-its sandbox/hardened-runtime signature lacks Music/Spotify automation access.
-Sampling also found AppleScript waiting to resolve an application name while
-compiling the media query. A review-only patch is saved in
-`wield-host-media-fix-proposed.patch`; it has NOT been applied. Automatic approval
-review requires explicit owner approval for the Music/Spotify access changes.
+The owner approved the Music/Spotify access fix on 2026-09-29. The saved
+`wield-host-media-fix-proposed.patch` was applied in AirBridge-mac commit
+`b666bfbafc17c0e29da296d1caa614a0d85eacdf`, branch `codex/fix-media-automation`.
+[CI passed](https://github.com/shawn8989/AirBridge-mac/actions/runs/36585718000).
+[Wield Host 1.0.2](https://github.com/shawn8989/AirBridge-mac/releases/tag/v1.0.2)
+is published as the latest release and installed in `/Applications/Wield Host.app`.
+It is a universal Intel/Apple silicon build, Developer ID signed, notarized, and
+stapled. The distributed ZIP passed Gatekeeper after extraction. The previous
+installed app is preserved at `/tmp/wield-host-installed-before-1.0.2.app`.
 
-Before final submission, finish and visually review the remaining captures, confirm
-real-iPhone sandbox purchase/Restore and input-release tests, and resolve the host
-media defect. Do not mark hardware testing complete based on simulator captures.
+Actual Music playback was verified through the Simulator after approving the
+host's macOS Automation prompt: "Coastal Drift — Still Studio" appeared in Media.
+The host stayed responsive when Music was paused and Spotify was absent.
+Spotify playback itself was not tested. The fix preserves App Sandbox and the
+existing capabilities while adding only Music/Spotify automation access.
+Reviewer notes now explain the new prompt and require Host 1.0.2 or later.
+
+The owner answered **"Not yet / unsure"** to the real-iPhone release checks on
+2026-09-29. Purchase/Restore, Hand Mouse, and physical-input release checks remain
+unverified. Keep the existing review draft unsent until those checks pass.
 
 ### Done
 
@@ -56,13 +69,9 @@ media defect. Do not mark hardware testing complete based on simulator captures.
 
 ### Left to do, in order
 
-1. Obtain explicit approval for the proposed Music/Spotify access fix; apply it,
-   verify CI, sign/notarize the companion, and verify actual Now Playing behavior.
-2. Capture and inspect `04-desktops.png` and `06-media.png`, frame them, and upload.
-   Final 6.5-inch order: Live Screen, Desktops, Media, Trackpad.
-3. Confirm the owner's real-device purchase, Restore, Hand Mouse, and input-release
+1. Confirm the owner's real-device purchase, Restore, Hand Mouse, and input-release
    checks. Hand Mouse and Gesture Studio screenshots remain owner-supplied.
-4. Submit the existing review draft only when those blockers are resolved; preserve
+2. Submit the existing review draft only when those checks pass; preserve
    manual release. Verify Apple's returned review status rather than assuming success.
 
 ---
@@ -200,13 +209,14 @@ is fine) and must be attached to the app version before submitting.
 IMPORTANT — Wield is a remote control for a Mac and requires its free companion app to function.
 
 To test:
-1. On a Mac (macOS 26.1 or later), download and open Wield Host:
+1. On a Mac (macOS 26.1 or later), download and open Wield Host 1.0.2 or later:
    https://shawn8989.github.io/AirBridge-mac/
    It is free, requires no account, and is signed and notarized by us.
 2. On first launch Wield Host asks for two macOS permissions — Accessibility and
    Screen Recording. Both must be granted in System Settings > Privacy &
    Security for input control and screen streaming to work. Wield Host shows an
    on-screen checklist that links directly to those panels.
+For Media Remote, play a track in Music or Spotify on the Mac and allow Wield Host to control that player when macOS asks.
 3. Put the iPhone and the Mac on the same Wi-Fi network.
 4. Open Wield on the iPhone. The Mac appears automatically in the list (it is
    discovered by Bonjour). Tap it to connect, and approve the pairing prompt
