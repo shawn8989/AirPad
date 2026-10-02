@@ -76,8 +76,14 @@ final class HandMouseAdapter: ObservableObject {
     func start() { tracker.start() }
 
     func stop() {
-        recognizer.reset()   // releases any held pinch/drag
-        tracker.stop()
+        // Releases any held pinch/drag. It runs on the camera queue because
+        // calling it here on main raced process() over the same state, and
+        // could emit pinchEnded while a frame was emitting too. `self` is
+        // captured strongly on purpose: the view is going away, and if the
+        // adapter (and with it the tracker) were freed before the queue got to
+        // this, the release would never reach the Mac and the button would
+        // stay down.
+        tracker.stop { self.recognizer.reset() }
     }
 
     /// Maps engine events to Mac input. Runs on the camera queue — the

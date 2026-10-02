@@ -41,10 +41,13 @@ final class HandTracker: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate 
         }
     }
 
-    func stop() {
+    /// `cleanup` runs on the camera queue once the session has stopped, so it
+    /// is serialised with `onFrame` — the place to reset per-frame state.
+    func stop(then cleanup: (() -> Void)? = nil) {
         cameraQueue.async { [weak self] in
             guard let self else { return }
             if self.session.isRunning { self.session.stopRunning() }
+            cleanup?()
             // AVCaptureVideoDataOutput retains its delegate STRONGLY, and we own
             // the output — so tracker -> output -> tracker was a cycle and the
             // tracker, its capture session, its camera input and its onFrame

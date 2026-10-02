@@ -95,6 +95,8 @@ final class HandGestureRecognizer {
 
     private let configLock = NSLock()
     private var pendingConfig: HandGestureConfig?
+    /// Requested calibration length, handed over the same way as config.
+    private var pendingCalibration: TimeInterval?
 
     /// Hands a new configuration to the camera queue. Safe from any thread.
     func updateConfig(_ newValue: HandGestureConfig) {
@@ -103,13 +105,17 @@ final class HandGestureRecognizer {
         configLock.unlock()
     }
 
-    /// Applies a configuration handed over since the last frame.
-    private func applyPendingConfig() {
+    /// Applies a configuration or calibration request handed over since the
+    /// last frame.
+    private func applyPending() {
         configLock.lock()
         let pending = pendingConfig
+        let calibrationSeconds = pendingCalibration
         pendingConfig = nil
+        pendingCalibration = nil
         configLock.unlock()
         if let pending { config = pending }
+        if let calibrationSeconds { beginCalibration(seconds: calibrationSeconds) }
     }
     /// Emitted on the tracker's camera queue — hosts hop threads as needed.
     var onEvent: ((HandEvent) -> Void)?
@@ -163,7 +169,7 @@ final class HandGestureRecognizer {
     // MARK: - Input
 
     func process(_ hand: VNHumanHandPoseObservation?) {
-        applyPendingConfig()
+        applyPending()
         guard let hand else {
             handLost()
             return
@@ -255,6 +261,9 @@ final class HandGestureRecognizer {
         }
     }
 
+    /// Camera queue only, like process(): it clears the same state and emits
+    /// pinchEnded / fistDragEnded. A host stopping the camera should run it
+    /// through HandTracker.stop(then:).
     func reset() {
         releasePinch()
         endDragIfNeeded()
@@ -277,7 +286,18 @@ final class HandGestureRecognizer {
     /// Captures the user's open hand for `seconds` and derives per-finger
     /// extension ratios from the median sample (median, not mean: one bad
     /// frame with a joint off-screen can't drag the result).
+    ///
+    /// Safe from any thread: the capture begins on the camera queue at the
+    /// next frame. Starting it directly from the main thread cleared the
+    /// samples, flipped `calibrating` and released the pinch/drag while
+    /// process() was reading and writing the same state.
     func startCalibration(seconds: TimeInterval = 2.0) {
+        configLock.lock()
+        pendingCalibration = seconds
+        configLock.unlock()
+    }
+
+    private func beginCalibration(seconds: TimeInterval) {
         calibrationSamples.removeAll()
         calibrating = true
         calibrationEnds = CACurrentMediaTime() + seconds
