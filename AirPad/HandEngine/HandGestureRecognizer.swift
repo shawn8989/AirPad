@@ -173,16 +173,21 @@ final class HandGestureRecognizer {
             handLost()
             return
         }
-        lostFrames = 0
         let scale = distance(wrist, midMCP)
         guard scale > 0.02 else {
             // A hand detected but degenerate (edge-on, or mostly out of frame)
             // used to return here having already reset lostFrames, so pinch and
             // drag stayed latched with no path to release — the Mac's button
             // held down indefinitely. Treat it as a lost hand.
+            //
+            // lostFrames must only be zeroed BELOW this guard. Zeroed above it,
+            // every degenerate frame reset the count and bumped it back to 1,
+            // so a sustained run never reached handLost()'s threshold and the
+            // button stayed down just the same.
             handLost()
             return
         }
+        lostFrames = 0
 
         if calibrating {
             collectCalibrationSample(hand, wrist: wrist, scale: scale)
