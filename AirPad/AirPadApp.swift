@@ -44,7 +44,11 @@ struct AirPadApp: App {
                         if !hasCompletedOnboarding { hasCompletedOnboarding = true }
                     }
                 ) {
-                    OnboardingView()
+                    // Sheets don't inherit ContentView's navigation container.
+                    // Onboarding needs its own stack to display the Done toolbar.
+                    NavigationStack {
+                        OnboardingView()
+                    }
                 }
         }
     }
