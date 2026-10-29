@@ -254,6 +254,16 @@ struct ConnectionView: View {
             }
             .padding(.horizontal)
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // Purchase and restore must be reachable before pairing,
+                // including while the free trial unlocks all remote features.
+                NavigationLink(destination: PaywallView()) {
+                    Text("Wield Pro")
+                }
+                .accessibilityIdentifier("connection.pro")
+            }
+        }
         .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
         .sheet(isPresented: $showRemotePaywall) {
             NavigationStack { PaywallView() }

@@ -1,0 +1,50 @@
+name: App Review access
+
+on:
+  push:
+    branches: ["codex/app-store-submission"]
+    paths:
+      - "AirPad/**"
+      - "AirPadUITests/**"
+      - "AirPad.xcodeproj/**"
+      - ".github/workflows/app-review-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  review-access:
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ["iPhone 17 Pro Max", "iPad Air 11-inch (M3)"]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test fresh onboarding and unpaired purchase access
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project AirPad.xcodeproj \
+            -scheme AppReview \
+            -configuration Release \
+            -destination 'platform=iOS Simulator,name=${{ matrix.device }},OS=latest' \
+            -only-testing:AirPadUITests/AppReviewAccessTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/AppReview.xcresult" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+      - name: Export test screenshots
+        if: always()
+        run: |
+          xcrun xcresulttool export attachments \
+            --path "$RUNNER_TEMP/AppReview.xcresult" \
+            --output-path "$RUNNER_TEMP/review-screenshots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-access-${{ matrix.device }}
+          path: |
+            ${{ runner.temp }}/AppReview.xcresult
+            ${{ runner.temp }}/review-screenshots
+          retention-days: 14

@@ -88,12 +88,14 @@ struct PaywallView: View {
                     .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("pro.purchase")
                 .disabled(busy || store.purchased || store.product == nil)
                 .padding(.horizontal)
 
                 Button("Restore Purchase") {
                     Task { await store.restore() }
                 }
+                .accessibilityIdentifier("pro.restore")
                 .font(.footnote)
 
                 if let error = store.lastError {
