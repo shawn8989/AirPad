@@ -7,9 +7,46 @@ Copy/paste the metadata blocks straight into ASC.
 
 ## 0. Where this stands
 
-Updated 2026-09-29. Version 1.0/build 1 and Wield Pro pass App Store Connect's
-READY_FOR_REVIEW validation in draft submission
-`5aec15b9-ef30-4636-9906-3359d7305944`. **Not submitted.** Manual release is selected.
+Updated 2026-10-29. Version 1.0/build 3 and Wield Pro were resubmitted at
+12:55 AM Pacific in submission `5aec15b9-ef30-4636-9906-3359d7305944`. Apple
+confirmed **WAITING_FOR_REVIEW**, with **MANUAL** release preserved.
+
+The October 28 rejection of build 2 on an iPad Air
+11-inch (M3) raised two issues: 5.2.5 for "Mac" in the App Store name, and
+2.1(b) because the reviewer could not locate Wield Pro. There were no new
+attachments. The older onboarding rejection applies to build 1.
+
+The listing has been renamed **Wield: Remote & Trackpad**. Build 3 adds a
+Wield Pro link to the connection screen, so purchase and restore are accessible
+without pairing or waiting for the trial to expire. Release UI tests passed on iPhone 17 Pro Max and iPad Air 11-inch (M3)
+simulators running iOS 26.2, one test per device with zero failures. The
+StoreKit-loaded $9.99 price and Restore button were visually verified in both
+captures. CI archive and signing verification passed. Apple processed build 3
+as VALID (`ece3179a-bfba-4dbf-a7be-56cd1d02afa8`); it is selected for review and
+available to Owner Testing in TestFlight. Manual release remains selected.
+
+The reviewer reply was posted and verified as the fifth message. Exact purchase
+steps are also saved in App Review Information and the IAP review note. Two
+optional screenshot uploads remained Processing, so they were removed from the
+draft before sending the text-only reply. Original captures remain in the CI
+artifact; no attachment delivery is claimed.
+
+Pre-edit diagnosis and plan: connected-only Settings/trial upgrade links made
+the purchase difficult to locate before host setup; the trial also bypasses
+the connection screen's conditional address paywall. Keep the real StoreKit
+purchase implementation and product ID unchanged, expose the existing paywall
+before pairing, and give Apple exact navigation steps. Validate a fresh launch,
+onboarding dismissal, unpaired Pro access, Restore visibility, and persisted
+onboarding completion in Release-mode UI tests on iPhone and iPad. Check the
+actual product configuration and Paid Apps Agreement before resubmission.
+
+On October 29, the Paid Apps Agreement was verified Active; the product
+`com.airpad.pro.lifetime` remained a non-consumable priced at $9.99 USD and
+available in 175 territories, including the US. Its review version remained
+Ready for Review and attached to this submission. These configuration checks
+do not constitute a new sandbox transaction test.
+
+The original submission setup below is historical; the status above is current.
 
 The free app price, $9.99 Pro price, age rating, content rights, listing, reviewer
 notes, and selected build are saved. App availability matches the 175 territories
@@ -87,6 +124,15 @@ without a separate release action.
 
 ---
 
+CI evidence for build 3, commit `359a0ea640178863e2fc87fdc8999e7b24c3989e`:
+
+- [Release UI tests](https://github.com/shawn8989/AirPad/actions/runs/40836613663)
+- [Release archive](https://github.com/shawn8989/AirPad/actions/runs/40836613415)
+- [Compile check](https://github.com/shawn8989/AirPad/actions/runs/40836613508)
+
+No new hardware, completed sandbox purchase, or restore transaction is claimed
+for build 3. The StoreKit transaction implementation is unchanged.
+
 ## 1. App record
 
 | Field | Value |
@@ -107,16 +153,14 @@ without a separate release action.
 
 | Field | Value |
 |---|---|
-| **Name** (30 max) | `Wield: Mac Remote & Trackpad` — 28 chars |
+| **Name** (30 max) | `Wield: Remote & Trackpad` — 24 chars |
 | **Subtitle** (30 max) | `Hand gestures & live screen` — 27 chars |
 | Home-screen name | `Wield` (`CFBundleDisplayName`) |
 
 The bare name `Wield` was already reserved in App Store Connect by someone else,
-though no app by that name is published — a dormant reservation blocks only the
-exact string. `Wield: …` keeps the brand as the first word (what users say, and
-what the icon shows) while the descriptor does real work: **the name field is
-Apple's highest-weighted search field**, so "Mac Remote" and "Trackpad" earn
-more there than in keywords.
+so the listing uses a descriptive suffix. Apple requested removal of "Mac"
+from the name in its October 28 review; the compatibility requirement remains
+explained in the description and reviewer setup instructions.
 
 Because the name now carries those terms, the subtitle and keywords deliberately
 cover different ground — repeating a word across fields wastes the space.

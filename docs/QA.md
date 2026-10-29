@@ -7,6 +7,20 @@ Check each box; anything that fails blocks the release.
 **Setup:** Mac with ≥2 desktops (Mission Control → +), Safari open with a few
 tabs, Music app available. Phone and Mac on the same Wi-Fi.
 
+## 0. First launch and purchase discovery (without a Mac)
+
+- [ ] Fresh install on iPhone and iPad: onboarding shows Done; tapping it
+      opens the connection screen. Relaunch does not repeat onboarding.
+- [ ] Without pairing, tap Wield Pro at the upper right. The paywall opens
+      during the trial as well as after it expires.
+- [ ] Scroll to the StoreKit purchase price and Restore Purchase. With an
+      internet connection and an eligible sandbox account, the price loads.
+- [ ] After buying Pro, the same connection-screen link still opens the
+      purchased state and Restore Purchase remains reachable.
+
+CI's App Review access workflow checks navigation on fresh iPhone and iPad
+simulators in Release mode. It does not perform a live sandbox transaction.
+
 ## 1. Pairing & connection (5 min)
 
 - [ ] Fresh state: Wield Host → Devices → Forget the phone (and phone: Forget).
