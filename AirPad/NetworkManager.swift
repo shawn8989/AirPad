@@ -722,6 +722,11 @@ final class NetworkManager: ObservableObject {
 
     private func scheduleReconnect(immediate: Bool = false) {
         guard let service = lastService else { return }
+        if let code = pendingSecureQR, !code.isValid {
+            disconnect()
+            DispatchQueue.main.async { self.lastErrorMessage = "The pairing code expired. Show a new QR on the Mac." }
+            return
+        }
         reconnectTimer?.cancel()
         let delay = immediate ? 0 : reconnectBackoff
         log("Scheduling reconnect in \(String(format: "%.1f", delay))s to \(service.name)")
@@ -1463,6 +1468,18 @@ extension NetworkManager {
     }
 
     func hasSecurePairing(_ mac: KnownMac) -> Bool { security.secureSecret(forMac: mac.id) != nil }
+
+    @MainActor func connectDiscovered(_ service: DiscoveredService) {
+        if let mac = savedMacs.first(where: { $0.name == service.name }),
+           let secret = security.secureSecret(forMac: mac.id),
+           let identity = try? security.getOrCreateDeviceID(),
+           var secure = secureServices.first(where: { $0.name == service.name }) {
+            secure.secureMacID = mac.id; secure.secureIdentity = identity
+            secure.secureKey = WieldSecureTransport.key(secret: secret, purpose: "control")
+            selectedMac = nil; fallbackService = nil; pendingSecureQR = nil
+            connect(to: secure)
+        } else { connect(to: service) }
+    }
 
     @MainActor func connectSavedMac(_ mac: KnownMac, remoteOnly: Bool = false) {
         guard ProStore.shared.isPro else {

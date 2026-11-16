@@ -6,6 +6,7 @@ on:
     paths:
       - "AirPad/**"
       - "AirPadUITests/**"
+      - "AirPadTests/**"
       - "AirPad.xcodeproj/**"
       - ".github/workflows/app-review-tests.yml"
   workflow_dispatch:
@@ -31,9 +32,10 @@ jobs:
             -configuration Release \
             -destination 'platform=iOS Simulator,name=${{ matrix.device }},OS=latest' \
             -only-testing:AirPadUITests/AppReviewAccessTests \
+            -only-testing:AirPadTests/RemoteConnectionTests \
             -parallel-testing-enabled NO \
             -resultBundlePath "$RUNNER_TEMP/AppReview.xcresult" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
+            ENABLE_TESTABILITY=YES CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""
       - name: Export test screenshots
         if: always()
         run: |

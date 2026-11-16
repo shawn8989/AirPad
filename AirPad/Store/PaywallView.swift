@@ -40,6 +40,8 @@ struct PaywallView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     featureRow("dot.circle.and.hand.point.up.left.fill", "Air Mouse", "Point with your phone like a Wii remote")
+                    featureRow("network", "Away from home", "Saved Mac connections through Tailscale")
+                    featureRow("folder", "Files", "Get and send files in folders shared by your Mac")
                     featureRow("hand.point.up.left", "Hand Mouse", "Camera hand-tracking with gestures")
                     featureRow("playpause.fill", "Media & Presentation Remote", "Volume, playback, slides, brightness, lock")
                     featureRow("mic.fill", "Voice Typing", "Dictate with the keyboard mic, type on the Mac")

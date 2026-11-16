@@ -42,7 +42,7 @@ struct ContentView: View {
                                             if isSwitch && !proStore.isPro {
                                                 showMultiMacPaywall = true
                                             } else {
-                                                network.connect(to: service)
+                                                network.connectDiscovered(service)
                                             }
                                         } label: {
                                             if service.name == (network.connectedServiceName ?? network.currentMacName) {
@@ -153,7 +153,7 @@ struct ConnectionView: View {
                 }
                 Section {
                     ForEach(network.discoveredServices, id: \.id) { service in
-                        Button(action: { network.connect(to: service) }) {
+                        Button(action: { network.connectDiscovered(service) }) {
                             HStack(spacing: 12) {
                                 Image(systemName: "desktopcomputer")
                                     .font(.title3)
@@ -389,6 +389,10 @@ struct MainControlView: View {
 
     private var tvChip: some View {
         Group {
+            if network.isRemoteConnection {
+                Label("Connected away from home", systemImage: "checkmark.shield")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             if tv.tvConnected {
                 Label("TV connected — your Mac's screen is on the TV", systemImage: "tv.fill")
                     .font(.footnote.weight(.medium))

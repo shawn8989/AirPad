@@ -10,6 +10,9 @@
    <TestAction buildConfiguration="Release" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES">
       <Testables>
          <TestableReference skipped="NO" parallelizable="NO">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="29D313CB2ED50EC1002B489C" BuildableName="AirPadTests.xctest" BlueprintName="AirPadTests" ReferencedContainer="container:AirPad.xcodeproj"/>
+         </TestableReference>
+         <TestableReference skipped="NO" parallelizable="NO">
             <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="29D313D52ED50EC1002B489C" BuildableName="AirPadUITests.xctest" BlueprintName="AirPadUITests" ReferencedContainer="container:AirPad.xcodeproj"/>
          </TestableReference>
       </Testables>
