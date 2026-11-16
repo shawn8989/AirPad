@@ -62,12 +62,12 @@ struct HelpView: View {
             }
 
             Section("Privacy & Security") {
-                helpRow("Traffic stays on your local network, encrypted with TLS. Every device is paired and authenticated per-Mac; the Mac only obeys authenticated devices.")
+                helpRow("Local connections stay on your network. Remote connections use your own Tailscale connection. Secure QR pairing gives each phone its own encrypted connection; only approved devices can control the Mac or access its selected shared folders.")
                 helpRow("Reset trust anytime with Forget Server, then re-pair.")
             }
 
             Section("Away From Home (Pro)") {
-                helpRow("Wield is designed for your own Wi-Fi, but Pro users can control their Mac from anywhere with a personal VPN like Tailscale (free): install it on the Mac and this device, then use Wake / IP → Connect by Address with the Mac's VPN address. Wield Host listens on port 52417.")
+                helpRow("Open Access away from home to set up Tailscale on both devices, scan the Mac's new pairing QR, and save its Tailscale name. Tap the saved Mac to reconnect. Remote access and Files are included in Pro. Tailscale has a separate account and a free personal plan.")
                 helpRow("Wake a sleeping Mac: the Wake / IP menu sends a wake-up signal to any Mac you've paired with. On the Mac, turn on System Settings → Battery → Options → \"Wake for network access\". Moving the trackpad also wakes a dark display.")
             }
 
@@ -78,7 +78,7 @@ struct HelpView: View {
                 helpRow("Connected, but the cursor moves and nothing else works? Wield Host is almost certainly not in the Mac's Applications folder. Until it is, macOS runs it from a temporary copy and quietly discards the Accessibility permission no matter how many times you grant it. Quit Wield Host, drag it to Applications, and open it from there.")
                 helpRow("Input not working at all? Check the Mac's Accessibility permission for Wield Host (System Settings > Privacy & Security > Accessibility). If old entries are listed, remove them with the minus button and grant it again.")
                 helpRow("Says connected but nothing responds? The two halves of the pairing key no longer match — usually after reinstalling Wield Host or resetting its permissions. It should re-pair itself on the next connection. If it doesn't: click Forget next to this device in Wield Host, then reconnect and approve the prompt.")
-                helpRow("Laggy? Lower Live Screen quality, or reconnect.")
+                helpRow("Laggy? Enable automatic connection quality in Live Screen Options. It reduces detail on slower links. You can also lower quality manually.")
                 helpRow("Pairing errors? Forget Server on the phone, then reconnect and approve again.")
             }
         }

@@ -14,7 +14,7 @@ on:
 jobs:
   review-access:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -23,14 +23,22 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare a fresh available Simulator
+        run: |
+          if ! xcrun simctl list runtimes --json | python3 -c 'import json,sys; sys.exit(not any(r.get("isAvailable") and r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-") for r in json.load(sys.stdin)["runtimes"]))'; then
+            xcodebuild -downloadPlatform iOS
+          fi
+          python3 scripts/prepare-test-simulator.py '${{ matrix.device }}' >> "$GITHUB_ENV"
       - name: Test fresh onboarding and unpaired purchase access
         run: |
           set -o pipefail
+          xcrun simctl boot "$TEST_SIMULATOR_ID"
+          xcrun simctl bootstatus "$TEST_SIMULATOR_ID" -b
           xcodebuild test \
             -project AirPad.xcodeproj \
             -scheme AppReview \
             -configuration Release \
-            -destination 'platform=iOS Simulator,name=${{ matrix.device }},OS=latest' \
+            -destination "platform=iOS Simulator,id=$TEST_SIMULATOR_ID" \
             -only-testing:AirPadUITests/AppReviewAccessTests \
             -only-testing:AirPadTests/RemoteConnectionTests \
             -parallel-testing-enabled NO \

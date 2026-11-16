@@ -52,6 +52,12 @@ final class NetworkManager: ObservableObject {
     // Connection
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "AirPad.Network")
+    private let queueKey = DispatchSpecificKey<Bool>()
+
+    private func onNetworkQueue<T>(_ work: () throws -> T) rethrows -> T {
+        if DispatchQueue.getSpecific(key: queueKey) == true { return try work() }
+        return try queue.sync(execute: work)
+    }
 
     // Outgoing input coalescing with backpressure (mouse + scroll). All access on `queue`.
     private var pendingMouseDelta: (dx: Double, dy: Double) = (0, 0)
@@ -219,6 +225,7 @@ final class NetworkManager: ObservableObject {
     private let maxInboundClockSkew: Int = 120 // seconds
 
     private init() {
+        queue.setSpecific(key: queueKey, value: true)
         #if DEBUG
         // Screenshot mode. App Store screenshots have to show the CONNECTED
         // interface, and connecting needs a Mac on the same network — which a
@@ -243,7 +250,15 @@ final class NetworkManager: ObservableObject {
         pathMonitor = monitor
         monitor.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied else { return }
-            DispatchQueue.main.async { self?.tryAutoReconnectOnForeground() }
+            guard let self else { return }
+            if self.authenticated, let active = self.connection {
+                let checkedAt = CACurrentMediaTime()
+                try? self.send(type: "ping", payload: [:])
+                self.queue.asyncAfter(deadline: .now() + 4) { [weak self, weak active] in
+                    guard let self, let active, self.connection === active, self.lastPongAt < checkedAt else { return }
+                    self.handleConnectionLost(error: nil)
+                }
+            } else { DispatchQueue.main.async { self.tryAutoReconnectOnForeground() } }
         }
         monitor.start(queue: queue)
     }
@@ -427,6 +442,10 @@ final class NetworkManager: ObservableObject {
 
     // MARK: - Connect
     func connect(to service: DiscoveredService) {
+        onNetworkQueue { connectOnNetworkQueue(to: service) }
+    }
+
+    private func connectOnNetworkQueue(to service: DiscoveredService) {
         if service.secureKey == nil { selectedMac = nil; fallbackService = nil; pendingSecureQR = nil }
         authenticated = false
         awaitingAuthConfirmation = false
@@ -487,6 +506,14 @@ final class NetworkManager: ObservableObject {
             switch state {
             case .ready:
                 self.log("Connection ready")
+                self.connectTimeout?.cancel()
+                let approvalTimeout = DispatchWorkItem { [weak self, weak connection] in
+                    guard let self, let connection, self.connection === connection, !self.authenticated else { return }
+                    self.disconnect()
+                    DispatchQueue.main.async { self.lastErrorMessage = "Pairing was not completed. Approve it on the Mac or scan a fresh pairing QR." }
+                }
+                self.connectTimeout = approvalTimeout
+                self.queue.asyncAfter(deadline: .now() + (service.secureKey == nil || self.pendingSecureQR != nil ? 120 : 20), execute: approvalTimeout)
                 DispatchQueue.main.async {
                     self.connectionStatus = "Verifying pairing…"
                     self.isPairing = true
@@ -538,9 +565,12 @@ final class NetworkManager: ObservableObject {
             service.secureMacID = code.macID
             service.secureIdentity = code.identity
             service.secureKey = key
-            pendingSecureQR = code
-            pendingQRPairing = (code.macID, code.macName, key)
-            connect(to: service)
+            onNetworkQueue {
+                selectedMac = nil; fallbackService = nil
+                pendingSecureQR = code
+                pendingQRPairing = (code.macID, code.macName, key)
+                connect(to: service)
+            }
             return nil
         }
         guard let data = string.data(using: .utf8),
@@ -631,6 +661,10 @@ final class NetworkManager: ObservableObject {
     }
 
     func disconnect() {
+        onNetworkQueue { disconnectOnNetworkQueue() }
+    }
+
+    private func disconnectOnNetworkQueue() {
         authenticated = false
         connectTimeout?.cancel()
         selectedMac = nil
@@ -686,6 +720,10 @@ final class NetworkManager: ObservableObject {
 
     // MARK: - Trust Management
     func resetTrust() {
+        onNetworkQueue { resetTrustOnNetworkQueue() }
+    }
+
+    private func resetTrustOnNetworkQueue() {
         log("Resetting trust: deleting shared secret and fingerprint, disconnecting.")
         // Best-effort deletes; ignore errors but log
         do { _ = try security.deleteSharedSecret() } catch { log("ResetTrust: deleteSharedSecret error: \(error)") }
@@ -698,6 +736,7 @@ final class NetworkManager: ObservableObject {
         } catch { log("ResetTrust: deleteAllMacSecrets error: \(error)") }
         do { _ = try security.deleteServerCertFingerprint() } catch { log("ResetTrust: deleteServerCertFingerprint error: \(error)") }
 
+        disconnectOnNetworkQueue()
         // Clear in-memory session state
         sessionKey = nil
         sessionSalt = nil
@@ -745,8 +784,8 @@ final class NetworkManager: ObservableObject {
 
     func tryAutoReconnectOnForeground() {
         // Called when app enters foreground; attempt immediate reconnect if we have a previous service and are not connected.
-        if !isConnected, lastService != nil {
-            scheduleReconnect(immediate: true)
+        if !isConnected, !isPairing, connectingServiceID == nil {
+            onNetworkQueue { if lastService != nil { scheduleReconnect(immediate: true) } }
         }
     }
 
@@ -898,7 +937,7 @@ final class NetworkManager: ObservableObject {
                 }
 
             case "auth_ok":
-                markAuthenticated()
+                if awaitingAuthConfirmation { markAuthenticated() }
             case "remote_readiness":
                 if let payload = obj?["payload"] as? [String: Any] {
                     DispatchQueue.main.async { self.remoteReadiness = payload.compactMapValues { $0 as? Bool } }
@@ -1188,8 +1227,10 @@ final class NetworkManager: ObservableObject {
     }
 
     func send(type: String, payload: [String: Any]) throws {
-        let packet = buildPacket(type: type, payload: payload)
-        try sendRawJSON(packet)
+        try onNetworkQueue {
+            let packet = buildPacket(type: type, payload: payload)
+            try sendRawJSON(packet)
+        }
     }
 
     // Public high-level events
@@ -1258,7 +1299,7 @@ final class NetworkManager: ObservableObject {
             line.append(0x0A)
             inputInFlight += 1
             conn.send(content: line, completion: .contentProcessed { [weak self] _ in
-                guard let self = self else { return }
+                guard let self, self.connection === conn else { return }
                 // NWConnection completions run on the connection's queue (== self.queue).
                 self.inputInFlight = max(0, self.inputInFlight - 1)
                 self.pumpInput()
@@ -1462,7 +1503,7 @@ extension NetworkManager {
     }
 
     func forgetRemoteAddress(for mac: KnownMac) {
-        if selectedMac?.id == mac.id { disconnect() }
+        onNetworkQueue { if selectedMac?.id == mac.id { disconnect() } }
         KnownMacStore.setRemote(nil, for: mac.id)
         savedMacs = KnownMacStore.all()
     }
@@ -1476,8 +1517,10 @@ extension NetworkManager {
            var secure = secureServices.first(where: { $0.name == service.name }) {
             secure.secureMacID = mac.id; secure.secureIdentity = identity
             secure.secureKey = WieldSecureTransport.key(secret: secret, purpose: "control")
-            selectedMac = nil; fallbackService = nil; pendingSecureQR = nil
-            connect(to: secure)
+            onNetworkQueue {
+                selectedMac = nil; fallbackService = nil; pendingSecureQR = nil; pendingQRPairing = nil
+                connect(to: secure)
+            }
         } else { connect(to: service) }
     }
 
@@ -1490,8 +1533,6 @@ extension NetworkManager {
             lastErrorMessage = "Scan this Mac's new pairing QR to enable secure access."
             return
         }
-        selectedMac = mac
-        pendingSecureQR = nil
         var remote: DiscoveredService?
         if let address = mac.remoteAddress {
             remote = DiscoveredService(name: mac.name, host: address.host, port: Int(address.port),
@@ -1503,17 +1544,29 @@ extension NetworkManager {
         if !remoteOnly, var local = secureServices.first(where: { $0.name == mac.name }) {
             local.secureMacID = mac.id; local.secureIdentity = identity
             local.secureKey = WieldSecureTransport.key(secret: secret, purpose: "control")
-            fallbackService = remote
-            connect(to: local)
+            onNetworkQueue {
+                selectedMac = mac; pendingSecureQR = nil; pendingQRPairing = nil
+                fallbackService = remote
+                connect(to: local)
+            }
         } else if let remote {
-            fallbackService = nil
-            connect(to: remote)
+            onNetworkQueue {
+                selectedMac = mac; pendingSecureQR = nil; pendingQRPairing = nil
+                fallbackService = nil
+                connect(to: remote)
+            }
         } else { lastErrorMessage = "Add this Mac's Tailscale name in Access away from home." }
     }
 
     @MainActor func fileConfiguration() throws -> FileClientConfiguration {
-        guard ProStore.shared.isPro, authenticated, isSecureConnection,
-              bridgeSupports(BridgeFeature.fileTransfer), let macID = currentMacID,
+        guard ProStore.shared.isPro, isSecureConnection, bridgeSupports(BridgeFeature.fileTransfer) else {
+            throw RemoteError.message("Update Wield Host and scan its pairing QR to use Files with Wield Pro.")
+        }
+        return try onNetworkQueue { try fileConfigurationOnNetworkQueue() }
+    }
+
+    private func fileConfigurationOnNetworkQueue() throws -> FileClientConfiguration {
+        guard authenticated, let macID = currentMacID,
               let secret = security.secureSecret(forMac: macID), let service = lastService,
               let deviceID = try? security.getOrCreateDeviceID() else {
             throw RemoteError.message("Update Wield Host and scan its pairing QR to use Files with Wield Pro.")
