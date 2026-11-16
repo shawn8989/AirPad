@@ -110,10 +110,8 @@ struct ConnectionView: View {
     @ObservedObject private var network = NetworkManager.shared
     @State private var searchPulse = false
     @State private var showQRScanner = false
-    @State private var showAddressPrompt = false
     @State private var showRemoteSetup = false
     @State private var showRemotePaywall = false
-    @State private var manualAddress = ""
     @State private var wokeMacName: String?
 
     var body: some View {
@@ -250,7 +248,7 @@ struct ConnectionView: View {
                                 showRemotePaywall = true
                             }
                         } label: {
-                            Label("Connect by Address…", systemImage: "network")
+                            Label("Access away from home", systemImage: "network")
                         }
                     } label: {
                         bottomBarLabel("Wake / IP", "power")
@@ -293,23 +291,6 @@ struct ConnectionView: View {
             NavigationStack { PaywallView() }
         }
         .onAppear { network.startBrowsing() }
-        .alert("Connect by Address", isPresented: $showAddressPrompt) {
-            TextField("IP or hostname (e.g. 100.64.1.5)", text: $manualAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Connect") {
-                var host = manualAddress
-                var port = NetworkManager.defaultPort
-                if let colon = host.lastIndex(of: ":"), let p = UInt16(host[host.index(after: colon)...]) {
-                    port = p
-                    host = String(host[..<colon])
-                }
-                network.connectToAddress(host, port: port)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("For connecting across networks (e.g. through Tailscale or another VPN) when your Mac can't be discovered automatically. Wield Host listens on port \(String(NetworkManager.defaultPort)).")
-        }
         .alert("Wake packet sent", isPresented: .init(
             get: { wokeMacName != nil },
             set: { if !$0 { wokeMacName = nil } })) {

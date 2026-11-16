@@ -290,14 +290,14 @@ final class NetworkManager: ObservableObject {
             case .EPERM, .EACCES:
                 return "Local Network access denied. Enable it in Settings > Privacy > Local Network."
             case .ENETDOWN, .ENETUNREACH, .ENOTCONN:
-                return "Network appears unavailable. Check your Wi‑Fi."
+                return "Network unavailable. Check Wi-Fi or cellular, and connect Tailscale for access away from home."
             default:
                 return "Network error: \(code.rawValue)"
             }
         case .dns(let code):
-            return "Bonjour/DNS error: \(code)"
+            return "Cannot find the Mac. Check its saved address and that Wield Host and Tailscale are running. (\(code))"
         case .tls(let status):
-            return "TLS error: \(status)"
+            return "Could not verify the Mac. Pairing may have changed or been revoked; update Wield Host and scan a fresh QR. (\(status))"
         @unknown default:
             return "Unexpected network error"
         }
@@ -433,13 +433,6 @@ final class NetworkManager: ObservableObject {
     /// Connect straight to a host (IP or DNS name) — for VPN/Tailscale setups
     /// where Bonjour discovery can't cross networks. Pairing and encryption
     /// work exactly as on the local network.
-    func connectToAddress(_ host: String, port: UInt16 = NetworkManager.defaultPort) {
-        let trimmed = host.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, let nwPort = NWEndpoint.Port(rawValue: port) else { return }
-        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(trimmed), port: nwPort)
-        connect(to: DiscoveredService(name: trimmed, host: trimmed, port: Int(port), endpoint: endpoint))
-    }
-
     // MARK: - Connect
     func connect(to service: DiscoveredService) {
         onNetworkQueue { connectOnNetworkQueue(to: service) }
