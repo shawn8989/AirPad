@@ -2,7 +2,7 @@ name: App Review access
 
 on:
   push:
-    branches: ["codex/app-store-submission"]
+    branches: ["codex/app-store-submission", "codex/remote-access-files"]
     paths:
       - "AirPad/**"
       - "AirPadUITests/**"

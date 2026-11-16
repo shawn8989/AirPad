@@ -22,6 +22,14 @@ final class AppReviewAccessTests: XCTestCase {
         capture(app, "Onboarding with Done")
         done.tap()
 
+        let remote = app.buttons["connection.remote"]
+        XCTAssertTrue(remote.waitForExistence(timeout: 10))
+        XCTAssertTrue(remote.isHittable, "Remote setup must be reachable without a discovered Mac")
+        remote.tap()
+        XCTAssertTrue(app.navigationBars["Access away from home"].waitForExistence(timeout: 10))
+        capture(app, "Remote setup before pairing")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
         let pro = app.buttons["connection.pro"]
         XCTAssertTrue(pro.waitForExistence(timeout: 10))
         XCTAssertTrue(pro.isHittable)

@@ -132,7 +132,7 @@ struct ConnectionView: View {
                 Section {
                     NavigationLink(destination: RemoteAccessSetupView()) {
                         Label("Access away from home", systemImage: "network")
-                    }
+                    }.accessibilityIdentifier("connection.remote")
                 }
                 if !network.savedMacs.isEmpty {
                     Section("Saved Macs") {

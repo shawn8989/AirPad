@@ -1464,7 +1464,7 @@ extension NetworkManager {
 
     func hasSecurePairing(_ mac: KnownMac) -> Bool { security.secureSecret(forMac: mac.id) != nil }
 
-    func connectSavedMac(_ mac: KnownMac, remoteOnly: Bool = false) {
+    @MainActor func connectSavedMac(_ mac: KnownMac, remoteOnly: Bool = false) {
         guard ProStore.shared.isPro else {
             lastErrorMessage = "Remote access is included in Wield Pro."
             return
@@ -1494,7 +1494,7 @@ extension NetworkManager {
         } else { lastErrorMessage = "Add this Mac's Tailscale name in Access away from home." }
     }
 
-    func fileConfiguration() throws -> FileClientConfiguration {
+    @MainActor func fileConfiguration() throws -> FileClientConfiguration {
         guard ProStore.shared.isPro, authenticated, isSecureConnection,
               bridgeSupports(BridgeFeature.fileTransfer), let macID = currentMacID,
               let secret = security.secureSecret(forMac: macID), let service = lastService,
