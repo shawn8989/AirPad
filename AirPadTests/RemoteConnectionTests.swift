@@ -68,6 +68,7 @@ final class RemoteConnectionTests: XCTestCase {
 
     private func exercise(legacy: Bool) async throws {
         let network = NetworkManager.shared
+        let previousMacs = UserDefaults.standard.data(forKey: "knownMacs.v1")
         network.disconnect()
         let id = UUID().uuidString
         let identity = try SecurityManager.shared.getOrCreateDeviceID()
@@ -80,6 +81,8 @@ final class RemoteConnectionTests: XCTestCase {
             network.disconnect(); peer.stop()
             SecurityManager.shared.deleteSecureSecret(forMac: id)
             _ = try? SecurityManager.shared.deleteSharedSecret(forMac: id)
+            UserDefaults.standard.set(previousMacs, forKey: "knownMacs.v1")
+            network.savedMacs = KnownMacStore.all()
         }
         let port = try await peer.start()
         var service = DiscoveredService(name: "Test Mac", host: "127.0.0.1", port: Int(port.rawValue), endpoint: .hostPort(host: "127.0.0.1", port: port))

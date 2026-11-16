@@ -132,7 +132,7 @@ struct ConnectionView: View {
                         Label("Access away from home", systemImage: "network")
                     }.accessibilityIdentifier("connection.remote")
                 }
-                if !network.savedMacs.isEmpty {
+                if network.savedMacs.contains(where: { $0.remoteAddress != nil }) {
                     Section("Saved Macs") {
                         ForEach(network.savedMacs) { mac in
                             if mac.remoteAddress != nil {
@@ -142,7 +142,8 @@ struct ConnectionView: View {
                                 } label: {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Label(mac.name, systemImage: "desktopcomputer")
-                                        Text(network.connectionStatus).font(.caption).foregroundStyle(.secondary)
+                                        Text(network.connectedServiceName == mac.name ? network.connectionStatus : "Tap to connect")
+                                            .font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -202,6 +203,7 @@ struct ConnectionView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 32)
                     }
+                    .padding(.bottom, 12)
                 }
             }
 
