@@ -99,15 +99,21 @@ struct LiveScreenView: View {
                             .font(.headline)
                             .foregroundStyle(.secondary)
                         if network.streamErrorReason == "screen_recording_permission" {
-                            Text("The Mac needs Screen Recording permission:\nSystem Settings → Privacy & Security → Screen Recording → enable Wield Host, then relaunch Wield Host.")
+                            Text("Screen capture was denied on the Mac. Enable Wield Host in System Settings → Privacy & Security → Screen Recording, then retry. Relaunch Wield Host if macOS asks.")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
+                        } else if network.streamErrorReason != nil {
+                            Text(network.streamErrorMessage ?? "Screen capture could not start. Check Wield Host and retry.")
+                                .font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
                         } else {
                             Text("Retrying automatically…")
                                 .font(.footnote)
                                 .foregroundStyle(.tertiary)
+                        }
+                        if network.streamErrorReason != nil {
+                            Button("Retry screen capture") { startStreaming() }
                         }
                     }
                     .padding()
@@ -289,12 +295,12 @@ struct LiveScreenView: View {
             // The stream dies with the old connection on auto-reconnect;
             // re-request it on the fresh one.
             if connected && isStreaming {
-                network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
+                startStreaming()
             }
         }
         .task {
             // Stream watchdog: if we're supposed to be streaming but frames
-            // stopped for >3s, re-request the stream (covers reconnects and
+            // stopped for >8s, re-request the stream (covers reconnects and
             // transient capture failures on the Mac).
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -628,7 +634,10 @@ struct LiveScreenView: View {
 
     // MARK: - Streaming control
     private func startStreaming() {
-        network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
+        network.streamErrorReason = nil
+        network.streamErrorMessage = nil
+        lastFrameAt = Date()
+        network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality, retry: true)
         isStreaming = true
         TVSceneManager.shared.phoneWantsStream = true
     }

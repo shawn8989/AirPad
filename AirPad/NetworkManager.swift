@@ -175,6 +175,7 @@ final class NetworkManager: ObservableObject {
     // Non-nil when the Mac reported a streaming problem (e.g. missing
     // Screen Recording permission).
     @Published var streamErrorReason: String?
+    @Published var streamErrorMessage: String?
 
     // Server-pushed state updates (e.g., after composite focus commands)
     @Published var pushedOpenWindows: [MacWindowInfo] = []
@@ -946,7 +947,8 @@ final class NetworkManager: ObservableObject {
 
             case "stream_error":
                 if let payload = obj?["payload"] as? [String: Any], let reason = payload["reason"] as? String {
-                    DispatchQueue.main.async { self.streamErrorReason = reason }
+                    let message = payload["message"] as? String
+                    DispatchQueue.main.async { self.streamErrorReason = reason; self.streamErrorMessage = message }
                 }
 
             case "now_playing":
@@ -1423,9 +1425,9 @@ final class NetworkManager: ObservableObject {
     }
 
     // MARK: - Live Screen control
-    func startLiveScreen(maxWidth: Int = 1024, quality: Double = 0.7, automatic: Bool = true) {
+    func startLiveScreen(maxWidth: Int = 1024, quality: Double = 0.7, automatic: Bool = true, retry: Bool = false) {
         let q = max(0.1, min(1.0, quality))
-        try? send(type: "video_start", payload: ["format": "jpeg", "maxWidth": maxWidth, "quality": q, "automatic": automatic])
+        try? send(type: "video_start", payload: ["format": "jpeg", "maxWidth": maxWidth, "quality": q, "automatic": automatic, "retry": retry])
     }
 
     func configureLiveScreen(maxWidth: Int, quality: Double, automatic: Bool) {
