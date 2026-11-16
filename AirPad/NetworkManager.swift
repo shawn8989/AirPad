@@ -20,6 +20,10 @@ struct DiscoveredService: Identifiable, Equatable {
     let host: String?
     let port: Int?
     let endpoint: NWEndpoint
+    var secureMacID: String? = nil
+    var secureIdentity: String? = nil
+    var secureKey: Data? = nil
+    var isRemote = false
 }
 
 final class NetworkManager: ObservableObject {
@@ -28,6 +32,22 @@ final class NetworkManager: ObservableObject {
     // Bonjour
     private let serviceType = "_airbridge._tcp"
     private var browser: NWBrowser?
+    private var secureBrowser: NWBrowser?
+    private var pathMonitor: NWPathMonitor?
+    @Published var secureServices: [DiscoveredService] = []
+    @Published var savedMacs: [KnownMac] = KnownMacStore.all()
+    @Published var connectionStatus = "Choose a Mac"
+    @Published var isSecureConnection = false
+    @Published var isRemoteConnection = false
+    @Published var remoteReadiness: [String: Bool] = [:]
+    private var selectedMac: KnownMac?
+    private var fallbackService: DiscoveredService?
+    private var connectTimeout: DispatchWorkItem?
+    private var authenticated = false
+    private var awaitingAuthConfirmation = false
+    private var pendingSecureQR: SecurePairingCode?
+    private var serverInfo: [String: Any] = [:]
+
 
     // Connection
     private var connection: NWConnection?
@@ -219,6 +239,13 @@ final class NetworkManager: ObservableObject {
         #endif
         // Start Bonjour browsing on init so the UI can immediately show services
         startBrowsing()
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            DispatchQueue.main.async { self?.tryAutoReconnectOnForeground() }
+        }
+        monitor.start(queue: queue)
     }
 
     #if DEBUG
@@ -342,6 +369,7 @@ final class NetworkManager: ObservableObject {
 
     // MARK: - Bonjour Browsing
     func startBrowsing() {
+        startSecureBrowsing()
         log("Browsing for Bonjour services: \(serviceType)")
         // A backgrounded browser comes back wedged: it stays "running" but
         // never reports results again. Always start from a fresh one.
@@ -399,6 +427,12 @@ final class NetworkManager: ObservableObject {
 
     // MARK: - Connect
     func connect(to service: DiscoveredService) {
+        if service.secureKey == nil { selectedMac = nil; fallbackService = nil; pendingSecureQR = nil }
+        authenticated = false
+        awaitingAuthConfirmation = false
+        connectTimeout?.cancel()
+        serverInfo = [:]
+        receiveBuffer.removeAll()
         log("Connecting to service: \(service.name)")
         // Tear down any existing connection so the user can switch Macs on the fly.
         connection?.cancel()
@@ -407,7 +441,6 @@ final class NetworkManager: ObservableObject {
         DispatchQueue.main.async { self.currentMacName = nil }
 
         lastService = service
-        reconnectBackoff = 1.0
         reconnectTimer?.cancel()
         reconnectTimer = nil
         // Desktop ids can change across Mac restarts; drop previews keyed by
@@ -418,13 +451,20 @@ final class NetworkManager: ObservableObject {
         // touching @Published directly from there fires SwiftUI observation off
         // the main thread.
         DispatchQueue.main.async {
+            self.isConnected = false
+            self.isSecureConnection = false
+            self.isRemoteConnection = service.isRemote
+            self.isPairing = false
+            self.connectionStatus = "Connecting to \(service.name)…"
             self.connectingServiceID = service.id
             self.lastErrorMessage = nil
             self.connectedServiceName = service.name
         }
 
         let parameters: NWParameters
-        if enableTLS {
+        if let identity = service.secureIdentity, let key = service.secureKey {
+            parameters = WieldSecureTransport.parameters(keys: [identity: key])
+        } else if enableTLS {
             // TLS-PSK (Stage 1): mutually-authenticated, encrypted channel via a
             // shared key. No certificate / TOFU verify-block needed — the PSK
             // itself authenticates both peers. The legacy cert-pinning helpers
@@ -442,14 +482,14 @@ final class NetworkManager: ObservableObject {
         let connection = NWConnection(to: service.endpoint, using: parameters)
         self.connection = connection
 
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self = self else { return }
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard let self, let connection, self.connection === connection else { return }
             switch state {
             case .ready:
                 self.log("Connection ready")
                 DispatchQueue.main.async {
-                    self.isConnected = true
-                    self.connectingServiceID = nil
+                    self.connectionStatus = "Verifying pairing…"
+                    self.isPairing = true
                 }
                 self.inboundLastCounter = 0
                 self.inboundLastTimestamp = 0
@@ -461,32 +501,24 @@ final class NetworkManager: ObservableObject {
                 self.reconnectTimer?.cancel()
                 self.reconnectTimer = nil
                 self.postConnectHandshake()
-                self.startHeartbeat()
                 self.receiveLoop()
             case .failed(let error):
-                self.log("Connection failed: \(error)")
-                DispatchQueue.main.async {
-                    self.lastErrorMessage = "Connection failed: \(self.friendlyError(error))"
-                    self.isConnected = false
-                    self.connectingServiceID = nil
-                }
-                self.stopHeartbeat()
-                self.connection?.cancel()
-                self.connection = nil
-                if self.lastService != nil { self.scheduleReconnect() }
+                self.handleConnectionLost(error: error)
             case .waiting(let error):
-                self.log("Connection waiting: \(error)")
-                DispatchQueue.main.async { self.lastErrorMessage = "Waiting: \(self.friendlyError(error))" }
+                DispatchQueue.main.async { self.connectionStatus = "Waiting for the Mac…"; self.lastErrorMessage = self.friendlyError(error) }
             case .cancelled:
-                self.log("Connection cancelled")
-                self.stopHeartbeat()
-                DispatchQueue.main.async { self.isConnected = false }
-                if self.lastService != nil { self.scheduleReconnect() }
+                self.handleConnectionLost(error: nil)
             default:
                 break
             }
         }
 
+        let timeout = DispatchWorkItem { [weak self, weak connection] in
+            guard let self, let connection, self.connection === connection, !self.authenticated else { return }
+            self.handleConnectionLost(error: nil)
+        }
+        connectTimeout = timeout
+        queue.asyncAfter(deadline: .now() + (pendingSecureQR == nil ? 12 : 30), execute: timeout)
         connection.start(queue: queue)
     }
 
@@ -498,6 +530,19 @@ final class NetworkManager: ObservableObject {
     /// Parses a scanned QR payload; on success stores the pending secret and
     /// connects to the matching Mac. Returns a user-facing error, or nil.
     func handleScannedQR(_ string: String) -> String? {
+        if let data = string.data(using: .utf8), let code = try? JSONDecoder().decode(SecurePairingCode.self, from: data) {
+            guard code.isValid, let key = code.secret else { return "This pairing code has expired. Show a new QR on the Mac." }
+            guard var service = secureServices.first(where: { $0.name == code.macName }) else {
+                return "The secure Mac is not visible yet. Wait a moment and scan again on the same Wi-Fi."
+            }
+            service.secureMacID = code.macID
+            service.secureIdentity = code.identity
+            service.secureKey = key
+            pendingSecureQR = code
+            pendingQRPairing = (code.macID, code.macName, key)
+            connect(to: service)
+            return nil
+        }
         guard let data = string.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               (obj["v"] as? Int) == 1,
@@ -563,19 +608,35 @@ final class NetworkManager: ObservableObject {
     /// The socket died on its own. Keep `lastService` so auto-reconnect can do
     /// its job, and do not send `bye` down a dead connection.
     private func handleConnectionLost(error: NWError?) {
+        authenticated = false
+        connectTimeout?.cancel()
+        let fallback = fallbackService
+        fallbackService = nil
         stopHeartbeat()
-        connection?.cancel()
+        let lost = connection
         connection = nil
+        lost?.cancel()
         sessionKey = nil
         DispatchQueue.main.async {
             self.isConnected = false
+            self.isSecureConnection = false
+            self.isPairing = false
+            self.connectingServiceID = nil
+            self.connectionStatus = "Mac unavailable — check power, Wield Host, and Tailscale."
             if let error { self.lastErrorMessage = "Connection lost: \(self.friendlyError(error))" }
         }
         log("Connection lost (\(error.map { "\($0)" } ?? "closed by peer")) — will retry")
-        if lastService != nil { scheduleReconnect() }
+        if let fallback { connect(to: fallback) }
+        else if lastService != nil { scheduleReconnect() }
     }
 
     func disconnect() {
+        authenticated = false
+        connectTimeout?.cancel()
+        selectedMac = nil
+        fallbackService = nil
+        pendingQRPairing = nil
+        pendingSecureQR = nil
         stopHeartbeat()
         // Tell the Mac we're leaving so it releases input state and updates
         // its dashboard IMMEDIATELY, instead of waiting for the socket to die.
@@ -587,7 +648,10 @@ final class NetworkManager: ObservableObject {
         lastService = nil // user-initiated disconnect disables auto-reconnect
         reconnectTimer?.cancel()
         reconnectTimer = nil
-        DispatchQueue.main.async { self.isConnected = false }
+        DispatchQueue.main.async {
+            self.isConnected = false; self.isSecureConnection = false; self.isPairing = false
+            self.connectingServiceID = nil; self.connectionStatus = "Disconnected"
+        }
         log("Disconnected by user")
         
         // Clear session keying material
@@ -666,7 +730,8 @@ final class NetworkManager: ObservableObject {
         timer.setEventHandler { [weak self] in
             guard let self = self, let svc = self.lastService else { return }
             self.log("Attempting reconnect to \(svc.name)")
-            self.connect(to: svc)
+            if let mac = self.selectedMac { DispatchQueue.main.async { self.connectSavedMac(mac) } }
+            else { self.connect(to: svc) }
         }
         timer.resume()
         reconnectTimer = timer
@@ -690,7 +755,7 @@ final class NetworkManager: ObservableObject {
                 // macID), then either an auth_challenge (already paired with this
                 // Mac) or, after user approval, a pair_response.
                 var payload: [String: Any] = ["deviceID": deviceID,
-                                              "deviceName": UIDevice.current.name]
+                                              "deviceName": UIDevice.current.name, "frameAck": true]
                 // QR pairing: prove we scanned the code shown on the Mac's
                 // screen — the server pairs us instantly, no approval dialog.
                 if let qr = self.pendingQRPairing {
@@ -706,10 +771,12 @@ final class NetworkManager: ObservableObject {
 
     // MARK: - Receive Loop
     private func receiveLoop() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
-            guard let self = self else { return }
+        guard let receivingConnection = connection else { return }
+        receivingConnection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self, weak receivingConnection] data, _, isComplete, error in
+            guard let self, let receivingConnection, self.connection === receivingConnection else { return }
             if let data = data, !data.isEmpty {
                 self.receiveBuffer.append(data)
+                guard self.receiveBuffer.count <= 16 * 1024 * 1024 else { self.handleConnectionLost(error: nil); return }
                 // Process complete lines (newline-delimited JSON)
                 while let nlIndex = self.receiveBuffer.firstIndex(of: 0x0A) { // '\n'
                     let line = self.receiveBuffer.prefix(upTo: nlIndex)
@@ -800,6 +867,12 @@ final class NetworkManager: ObservableObject {
                 // The Mac told us its stable ID + name. Remember it so we use the
                 // right per-Mac key (and can show which Mac we're controlling).
                 if let payload = obj?["payload"] as? [String: Any], let macID = payload["macID"] as? String {
+                    if let expected = lastService?.secureMacID, expected != macID {
+                        disconnect()
+                        DispatchQueue.main.async { self.lastErrorMessage = "This address belongs to a different Mac. Scan its QR to pair." }
+                        return
+                    }
+                    self.serverInfo = payload
                     self.currentMacID = macID
                     let macName = payload["macName"] as? String
                     let macAddress = payload["macAddress"] as? String
@@ -815,12 +888,19 @@ final class NetworkManager: ObservableObject {
                         self.bridgeProtocolVersion = payload["protocolVersion"] as? Int ?? 1
                         // Remember this Mac (name + hardware address) so the
                         // connect screen can offer Wake-on-LAN later.
-                        KnownMacStore.upsert(id: macID, name: macName ?? "Mac", macAddress: macAddress)
+                        _ = macAddress // Saved only after authentication succeeds.
                     }
                 }
 
+            case "auth_ok":
+                markAuthenticated()
+            case "remote_readiness":
+                if let payload = obj?["payload"] as? [String: Any] {
+                    DispatchQueue.main.async { self.remoteReadiness = payload.compactMapValues { $0 as? Bool } }
+                }
             case "pong":
                 self.lastPongAt = CACurrentMediaTime()
+                if awaitingAuthConfirmation { markAuthenticated() }
 
             case "text_focus":
                 if let payload = obj?["payload"] as? [String: Any], let focused = payload["focused"] as? Bool {
@@ -862,8 +942,24 @@ final class NetworkManager: ObservableObject {
                 if let qr = self.pendingQRPairing,
                    let deviceID = try? self.security.getOrCreateDeviceID() {
                     let derived = self.deriveQRPairSecret(qrSecret: qr.secret, deviceID: deviceID)
-                    try? self.security.storeSharedSecret(derived, forMac: qr.macID)
+                    do {
+                        if pendingSecureQR != nil {
+                            try self.security.storeSecureSecret(derived, forMac: qr.macID)
+                        } else { try self.security.storeSharedSecret(derived, forMac: qr.macID) }
+                    } catch {
+                        disconnect()
+                        DispatchQueue.main.async { self.lastErrorMessage = "Could not save this pairing. Please scan again." }
+                        return
+                    }
+                    // Reconnects must use the durable per-device key, never the
+                    // single-use QR key that the Mac has already invalidated.
+                    if pendingSecureQR != nil {
+                        self.lastService?.secureIdentity = deviceID
+                        self.lastService?.secureKey = WieldSecureTransport.key(secret: derived, purpose: "control")
+                    }
                     self.pendingQRPairing = nil
+                    self.pendingSecureQR = nil
+                    self.markAuthenticated()
                     self.log("QR pairing complete with \(qr.macName)")
                     DispatchQueue.main.async { self.isPairing = false }
                 }
@@ -883,8 +979,9 @@ final class NetworkManager: ObservableObject {
                 if let secretB64 = obj?["shared_secret"] as? String,
                    let secret = Data(base64Encoded: secretB64),
                    let macID = self.currentMacID {
-                    try? security.storeSharedSecret(secret, forMac: macID)
-                    DispatchQueue.main.async { self.isPairing = false }
+                    guard lastService?.secureKey == nil else { return }
+                    do { try security.storeSharedSecret(secret, forMac: macID); markAuthenticated() }
+                    catch { disconnect(); DispatchQueue.main.async { self.lastErrorMessage = "Could not save pairing." } }
                 }
 
             case "auth_challenge":
@@ -895,9 +992,13 @@ final class NetworkManager: ObservableObject {
                    let nonceB64 = payload["nonce"] as? String,
                    let nonce = Data(base64Encoded: nonceB64),
                    let macID = self.currentMacID,
-                   let secret = (try? self.security.getSharedSecret(forMac: macID)) ?? nil {
+                   let secret = self.connectionSecret(macID) {
                     let proof = self.security.hmacSHA256(data: nonce, key: secret)
+                    self.awaitingAuthConfirmation = true
                     try? self.send(type: "auth_proof", payload: ["proof": proof.base64EncodedString()])
+                    // Older Hosts have no auth_ok. They answer ping only after
+                    // authenticating, so pong is an explicit compatibility ack.
+                    try? self.send(type: "ping", payload: [:])
                 } else {
                     // Server thinks we're known but we have no key for this Mac
                     // (e.g. an install that predates per-Mac keys). Re-pair.
@@ -909,6 +1010,11 @@ final class NetworkManager: ObservableObject {
             case "auth_reset":
                 // Server could not verify our secret (typically a stale pairing).
                 // Clear THIS Mac's key so the automatic reconnect re-pairs.
+                if lastService?.secureKey != nil {
+                    disconnect()
+                    DispatchQueue.main.async { self.lastErrorMessage = "Pairing was revoked or changed. Scan a new QR on the Mac." }
+                    return
+                }
                 self.log("Server requested re-pair; clearing per-Mac secret")
                 if let macID = self.currentMacID { _ = try? self.security.deleteSharedSecret(forMac: macID) }
                 DispatchQueue.main.async { self.isPairing = true }
@@ -1027,6 +1133,11 @@ final class NetworkManager: ObservableObject {
                 let message = obj?["message"] as? String ?? "Unknown error"
                 DispatchQueue.main.async { self.lastErrorMessage = message }
             case "video_jpeg":
+                if let payload = obj?["payload"] as? [String: Any], let frame = payload["frame"] as? Int {
+                    // Ack even an undecodable image so one bad frame cannot
+                    // permanently stall the bounded stream.
+                    try? send(type: "video_ack", payload: ["frame": frame])
+                }
                 if let payload = obj?["payload"] as? [String: Any],
                    let b64 = payload["data"] as? String,
                    let data = Data(base64Encoded: b64) {
@@ -1273,9 +1384,13 @@ final class NetworkManager: ObservableObject {
     }
 
     // MARK: - Live Screen control
-    func startLiveScreen(maxWidth: Int = 1024, quality: Double = 0.7) {
+    func startLiveScreen(maxWidth: Int = 1024, quality: Double = 0.7, automatic: Bool = true) {
         let q = max(0.1, min(1.0, quality))
-        try? send(type: "video_start", payload: ["format": "jpeg", "maxWidth": maxWidth, "quality": q])
+        try? send(type: "video_start", payload: ["format": "jpeg", "maxWidth": maxWidth, "quality": q, "automatic": automatic])
+    }
+
+    func configureLiveScreen(maxWidth: Int, quality: Double, automatic: Bool) {
+        try? send(type: "video_config", payload: ["maxWidth": maxWidth, "quality": quality, "automatic": automatic])
     }
 
     func stopLiveScreen() {
@@ -1290,3 +1405,110 @@ final class NetworkManager: ObservableObject {
     #endif
 }
 
+
+
+extension NetworkManager {
+    private func startSecureBrowsing() {
+        secureBrowser?.cancel()
+        let browser = NWBrowser(for: .bonjour(type: WieldSecureTransport.serviceType, domain: nil), using: .tcp)
+        secureBrowser = browser
+        browser.browseResultsChangedHandler = { [weak self] results, _ in
+            let services = results.compactMap { result -> DiscoveredService? in
+                guard case .service(let name, _, _, _) = result.endpoint else { return nil }
+                return DiscoveredService(name: name, host: nil, port: nil, endpoint: result.endpoint)
+            }
+            DispatchQueue.main.async { self?.secureServices = services.sorted { $0.name < $1.name } }
+        }
+        browser.start(queue: queue)
+    }
+
+    private func connectionSecret(_ macID: String) -> Data? {
+        lastService?.secureKey != nil ? security.secureSecret(forMac: macID) : (try? security.getSharedSecret(forMac: macID))
+    }
+
+    private func markAuthenticated() {
+        guard !authenticated, let macID = currentMacID else { return }
+        authenticated = true
+        awaitingAuthConfirmation = false
+        connectTimeout?.cancel()
+        reconnectBackoff = 1
+        startHeartbeat()
+        let secure = lastService?.secureKey != nil
+        let name = serverInfo["macName"] as? String ?? "Mac"
+        let macAddress = serverInfo["macAddress"] as? String
+        DispatchQueue.main.async {
+            KnownMacStore.upsert(id: macID, name: name, macAddress: macAddress)
+            self.savedMacs = KnownMacStore.all()
+            self.isConnected = true
+            self.isSecureConnection = secure
+            self.isPairing = false
+            self.connectingServiceID = nil
+            self.connectionStatus = self.isRemoteConnection ? "Connected away from home" : "Connected"
+            self.lastErrorMessage = nil
+        }
+        if secure { try? send(type: "remote_readiness", payload: [:]) }
+    }
+
+    func saveRemoteAddress(_ text: String, for mac: KnownMac) throws {
+        let address = try RemoteAddress(text)
+        guard security.secureSecret(forMac: mac.id) != nil else { throw RemoteError.message("Scan this Mac's new pairing QR before setting up remote access.") }
+        KnownMacStore.setRemote(address, for: mac.id)
+        savedMacs = KnownMacStore.all()
+    }
+
+    func forgetRemoteAddress(for mac: KnownMac) {
+        if selectedMac?.id == mac.id { disconnect() }
+        KnownMacStore.setRemote(nil, for: mac.id)
+        savedMacs = KnownMacStore.all()
+    }
+
+    func hasSecurePairing(_ mac: KnownMac) -> Bool { security.secureSecret(forMac: mac.id) != nil }
+
+    func connectSavedMac(_ mac: KnownMac, remoteOnly: Bool = false) {
+        guard ProStore.shared.isPro else {
+            lastErrorMessage = "Remote access is included in Wield Pro."
+            return
+        }
+        guard let secret = security.secureSecret(forMac: mac.id), let identity = try? security.getOrCreateDeviceID() else {
+            lastErrorMessage = "Scan this Mac's new pairing QR to enable secure access."
+            return
+        }
+        selectedMac = mac
+        pendingSecureQR = nil
+        var remote: DiscoveredService?
+        if let address = mac.remoteAddress {
+            remote = DiscoveredService(name: mac.name, host: address.host, port: Int(address.port),
+                endpoint: .hostPort(host: NWEndpoint.Host(address.host), port: NWEndpoint.Port(rawValue: address.port)!))
+            remote?.secureMacID = mac.id; remote?.secureIdentity = identity
+            remote?.secureKey = WieldSecureTransport.key(secret: secret, purpose: "control")
+            remote?.isRemote = true
+        }
+        if !remoteOnly, var local = secureServices.first(where: { $0.name == mac.name }) {
+            local.secureMacID = mac.id; local.secureIdentity = identity
+            local.secureKey = WieldSecureTransport.key(secret: secret, purpose: "control")
+            fallbackService = remote
+            connect(to: local)
+        } else if let remote {
+            fallbackService = nil
+            connect(to: remote)
+        } else { lastErrorMessage = "Add this Mac's Tailscale name in Access away from home." }
+    }
+
+    func fileConfiguration() throws -> FileClientConfiguration {
+        guard ProStore.shared.isPro, authenticated, isSecureConnection,
+              bridgeSupports(BridgeFeature.fileTransfer), let macID = currentMacID,
+              let secret = security.secureSecret(forMac: macID), let service = lastService,
+              let deviceID = try? security.getOrCreateDeviceID() else {
+            throw RemoteError.message("Update Wield Host and scan its pairing QR to use Files with Wield Pro.")
+        }
+        let endpoint: NWEndpoint
+        switch service.endpoint {
+        case .service(let name, _, let domain, let interface):
+            endpoint = .service(name: name, type: WieldSecureTransport.fileServiceType, domain: domain, interface: interface)
+        case .hostPort(let host, _):
+            endpoint = .hostPort(host: host, port: NWEndpoint.Port(rawValue: WieldSecureTransport.filePort)!)
+        default: throw RemoteError.message("This connection does not support file access.")
+        }
+        return FileClientConfiguration(endpoint: endpoint, macID: macID, deviceID: deviceID, secret: secret)
+    }
+}

@@ -44,6 +44,7 @@ struct LiveScreenView: View {
 
     // Streaming parameters
     @State private var quality: Double = 0.7
+    @State private var automaticQuality = true
     @State private var maxWidth: Int = 1600 // default higher resolution
 
     // Debounce restart of the stream on quality/size changes
@@ -288,7 +289,7 @@ struct LiveScreenView: View {
             // The stream dies with the old connection on auto-reconnect;
             // re-request it on the fresh one.
             if connected && isStreaming {
-                network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+                network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
             }
         }
         .task {
@@ -297,8 +298,8 @@ struct LiveScreenView: View {
             // transient capture failures on the Mac).
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if isStreaming && Date().timeIntervalSince(lastFrameAt) > 3 && network.isConnected {
-                    network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+                if isStreaming && Date().timeIntervalSince(lastFrameAt) > 8 && network.isConnected && network.streamErrorReason == nil {
+                    network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
                 }
             }
         }
@@ -310,6 +311,7 @@ struct LiveScreenView: View {
                 UIApplication.shared.isIdleTimerDisabled = streaming
             }
         }
+        .onChange(of: automaticQuality) { _, _ in scheduleRestartDebounced() }
         .onChange(of: quality) { _, _ in scheduleRestartDebounced() }
         .onChange(of: maxWidth) { _, _ in scheduleRestartDebounced() }
         // Any interaction with the Mac counts as "the user is here": it shows
@@ -435,6 +437,10 @@ struct LiveScreenView: View {
         NavigationStack {
             Form {
                 Section("Stream") {
+                    if network.bridgeSupports(BridgeFeature.adaptiveVideo) {
+                        Toggle("Adapt to connection automatically", isOn: $automaticQuality)
+                        Text("Keeps screen updates bounded and reduces detail on slower connections.").font(.caption).foregroundStyle(.secondary)
+                    }
                     HStack {
                         Text("Quality")
                         Slider(value: $quality, in: 0.1...1.0, step: 0.05)
@@ -622,7 +628,7 @@ struct LiveScreenView: View {
 
     // MARK: - Streaming control
     private func startStreaming() {
-        network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+        network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
         isStreaming = true
         TVSceneManager.shared.phoneWantsStream = true
     }
@@ -641,12 +647,16 @@ struct LiveScreenView: View {
 
     private func scheduleRestartDebounced() {
         pendingRestartWorkItem?.cancel()
-        let work = DispatchWorkItem { [quality, maxWidth, isStreaming] in
+        let work = DispatchWorkItem { [quality, maxWidth, isStreaming, automaticQuality] in
             guard isStreaming else { return }
+            if network.bridgeSupports(BridgeFeature.adaptiveVideo) {
+                network.configureLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
+                return
+            }
             // Stop then start after a short pause
             network.stopLiveScreen()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                network.startLiveScreen(maxWidth: maxWidth, quality: quality)
+                network.startLiveScreen(maxWidth: maxWidth, quality: quality, automatic: automaticQuality)
             }
         }
         pendingRestartWorkItem = work

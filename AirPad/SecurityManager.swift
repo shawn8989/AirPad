@@ -224,6 +224,17 @@ final class SecurityManager {
         return true
     }
 
+
+    func storeSecureSecret(_ secret: Data, forMac macID: String) throws {
+        try storeSharedSecret(secret, forMac: "secure-v2." + macID)
+    }
+    func secureSecret(forMac macID: String) -> Data? {
+        try? getSharedSecret(forMac: "secure-v2." + macID)
+    }
+    func deleteSecureSecret(forMac macID: String) {
+        _ = try? deleteSharedSecret(forMac: "secure-v2." + macID)
+    }
+
     // MARK: - HMAC
     func hmacSHA256(data: Data, key: Data) -> Data {
         let keySym = SymmetricKey(data: key)

@@ -80,6 +80,8 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_airbridge._tcp</string>
+        <string>_wield-secure._tcp</string>
+        <string>_wield-files._tcp</string>
     </array>
 
     <!-- Optional: improves indirect input behavior with trackpads/keyboards -->

@@ -18,6 +18,7 @@ struct KnownMac: Codable, Identifiable, Equatable {
     let id: String          // stable machineID from server_info
     var name: String
     var macAddress: String?
+    var remoteAddress: RemoteAddress? = nil
 }
 
 enum KnownMacStore {
@@ -27,6 +28,13 @@ enum KnownMacStore {
         guard let data = UserDefaults.standard.data(forKey: key),
               let macs = try? JSONDecoder().decode([KnownMac].self, from: data) else { return [] }
         return macs
+    }
+
+    static func setRemote(_ address: RemoteAddress?, for id: String) {
+        var macs = all()
+        guard let index = macs.firstIndex(where: { $0.id == id }) else { return }
+        macs[index].remoteAddress = address
+        if let data = try? JSONEncoder().encode(macs) { UserDefaults.standard.set(data, forKey: key) }
     }
 
     static func upsert(id: String, name: String, macAddress: String?) {

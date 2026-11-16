@@ -37,6 +37,11 @@ struct ModesView: View {
                     pro: true) { LiveScreenView(startWithMirrorTip: true) }
             }
 
+            Section("Away from home") {
+                row("Files", "folder", "Get and send files in folders shared by your Mac", pro: true) { RemoteFilesView() }
+                row("Remote access setup", "network", "Save your Mac for another Wi-Fi network or cellular") { RemoteAccessSetupView() }
+            }
+
             Section("Media") {
                 row("Media Remote", "playpause.fill",
                     "Playback, volume, and which speaker the Mac uses", pro: true) { MediaControlsView() }

@@ -111,6 +111,7 @@ struct ConnectionView: View {
     @State private var searchPulse = false
     @State private var showQRScanner = false
     @State private var showAddressPrompt = false
+    @State private var showRemoteSetup = false
     @State private var showRemotePaywall = false
     @State private var manualAddress = ""
     @State private var wokeMacName: String?
@@ -128,6 +129,28 @@ struct ConnectionView: View {
             }
 
             List {
+                Section {
+                    NavigationLink(destination: RemoteAccessSetupView()) {
+                        Label("Access away from home", systemImage: "network")
+                    }
+                }
+                if !network.savedMacs.isEmpty {
+                    Section("Saved Macs") {
+                        ForEach(network.savedMacs) { mac in
+                            if mac.remoteAddress != nil {
+                                Button {
+                                    if ProStore.shared.isPro { network.connectSavedMac(mac) }
+                                    else { showRemotePaywall = true }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Label(mac.name, systemImage: "desktopcomputer")
+                                        Text(network.connectionStatus).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Section {
                     ForEach(network.discoveredServices, id: \.id) { service in
                         Button(action: { network.connect(to: service) }) {
@@ -166,8 +189,8 @@ struct ConnectionView: View {
                     }
                 }
             }
-            .overlay(alignment: .center) {
-                if network.discoveredServices.isEmpty {
+            .safeAreaInset(edge: .bottom) {
+                if network.discoveredServices.isEmpty && !network.savedMacs.contains(where: { $0.remoteAddress != nil }) {
                     VStack(spacing: 14) {
                         Image(systemName: "dot.radiowaves.left.and.right")
                             .font(.system(size: 44))
@@ -222,7 +245,7 @@ struct ConnectionView: View {
                             // Remote/VPN connectivity is a Pro nicety; the
                             // trial unlocks it too (isPro covers both).
                             if ProStore.shared.isPro {
-                                showAddressPrompt = true
+                                showRemoteSetup = true
                             } else {
                                 showRemotePaywall = true
                             }
@@ -264,6 +287,7 @@ struct ConnectionView: View {
                 .accessibilityIdentifier("connection.pro")
             }
         }
+        .sheet(isPresented: $showRemoteSetup) { NavigationStack { RemoteAccessSetupView() } }
         .sheet(isPresented: $showQRScanner) { QRScannerSheet() }
         .sheet(isPresented: $showRemotePaywall) {
             NavigationStack { PaywallView() }
@@ -464,6 +488,9 @@ struct MainControlView: View {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             }
             quickLink("Apps", "square.grid.2x2") { MacSwitcherView() }
+            quickLink("Files", "folder") {
+                if ProStore.shared.isPro { RemoteFilesView() } else { PaywallView() }
+            }
             quickLink("Modes", "ellipsis.circle") { ModesView() }
             quickButton("Desktop", "chevron.right", accessibility: "Next desktop") {
                 NetworkManager.shared.sendSwipe(fingers: 3, direction: "right", skipFullscreen: true)
